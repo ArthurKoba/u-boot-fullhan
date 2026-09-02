@@ -227,6 +227,7 @@ struct dw_eth_dev {
 
 	u32 interface;
 	u32 max_speed;
+	u32 mdio_clk_range;
 	u32 tx_currdescnum;
 	u32 rx_currdescnum;
 #if IS_ENABLED(CONFIG_BITBANGMII) && IS_ENABLED(CONFIG_DM_GPIO)

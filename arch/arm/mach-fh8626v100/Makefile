@@ -1,3 +1,3 @@
 # SPDX-License-Identifier: GPL-2.0+
 
-obj-y += lowlevel_init.o
+obj-y += cpu.o lowlevel_init.o

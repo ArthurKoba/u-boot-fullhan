@@ -3,34 +3,143 @@
 FH8626V100
 ==========
 
-The FH8626V100 is an ARM1176-based Fullhan camera SoC.  The
-``fh8626v100_ram_defconfig`` target is the first-stage bring-up target.  It is
-linked at ``0xa3000000`` and expects the vendor bootstrap to have configured
-clocks and the 64 MiB SDRAM window at ``0xa0000000``.
+The FH8626V100 is an ARM1176-based Fullhan camera SoC.  The port supports
+64 MiB of SDRAM, the DesignWare APB UART and timer, two DesignWare GPIO
+banks, SPI NOR, and the DesignWare Ethernet MAC in RMII mode.  Linux is
+started with legacy ATAGs and machine ID 9999, as required by the available
+FH8626V100 Linux 4.9 platform code.
 
-The RAM target currently provides the DesignWare APB UART and timer, reset,
-64 MiB DRAM description, and legacy ATAG boot with machine ID 9999.  Its
-environment is non-persistent and it does not write SPI flash.
+Two configurations are provided:
+
+``fh8626v100_flash_defconfig``
+    Production configuration linked at ``0xa0800000``.  The Fullhan
+    bootstrap loads it from the 192 KiB NOR slot at offset ``0x20000``.
+    The environment occupies the preceding 64 KiB sector at ``0x10000``.
+
+``fh8626v100_ram_defconfig``
+    Non-persistent development configuration linked at ``0xa3000000``.
+    It can be loaded and started by the vendor U-Boot without writing NOR.
+
+OpenIPC boot contract
+---------------------
+
+The default environment follows the OpenIPC raw-NOR layout used on the
+validated 8 MiB camera:
+
+=================  =====================
+NOR range          Purpose
+=================  =====================
+``0x000000-00ffff`` Fullhan bootstrap
+``0x010000-01ffff`` U-Boot environment
+``0x020000-04ffff`` U-Boot
+``0x050000-34ffff`` Linux legacy uImage
+``0x350000-44ffff`` ``rootfs_data``
+``0x450000-7fffff`` SquashFS root filesystem
+=================  =====================
+
+``openipc_boot`` reads the 3 MiB kernel partition to ``0xa1000000`` and
+boots it with the root filesystem on ``/dev/mtdblock5``.  ``netboot`` loads
+the same kernel image over TFTP.  The default ``bootm_low=0xa0000000`` and
+``bootm_size=0x02700000`` describe the 39 MiB visible to Linux.  OpenIPC can
+identify the platform through ``soc=fh8626v100`` and
+``manufacturer=fullhan``.  ``bootcmdnor`` selects the flash boot command used
+by OpenIPC installation and recovery tools.
+SPI NOR uses the standard ``sf`` command and the DesignWare FIFO transfer
+path.  Transfers are bounded to the hardware FIFO depth to avoid receive
+overruns on this controller.
+
+This platform intentionally does not use Standard Boot.  Its deployed Linux
+port requires legacy ATAGs, a fixed machine ID, and a fixed raw-NOR layout.
 
 Build
 -----
 
 Use an ARM EABI cross compiler::
 
-    make fh8626v100_ram_defconfig
-    make CROSS_COMPILE=arm-linux-
+    make fh8626v100_flash_defconfig
+    make CROSS_COMPILE=arm-linux-gnueabi-
 
-RAM test from the vendor U-Boot
---------------------------------
+For an OpenIPC-style release build, use ``build.sh``.  The raw open-source
+binary and padded U-Boot partition are always written to ``output/``::
 
-Place ``u-boot.bin`` in the TFTP root and run::
+    CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
+
+The Boot ROM does not load U-Boot directly.  A board-specific Fullhan
+bootstrap is required.  It is not part of this source tree because no
+redistribution licence is available.  Given a verified 8 MiB stock dump,
+the release script validates and patches its bootstrap descriptor and emits
+the standard OpenIPC NOR asset::
+
+    FH8626_FLASH_BACKUP=/path/to/stock-8m.bin \
+      CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
+
+The outputs are:
+
+``u-boot-fh8626v100.bin``
+    Raw U-Boot binary.
+
+``u-boot-fh8626v100-bootstrap.bin``
+    64 KiB validated bootstrap with updated U-Boot size and JAMCRC.
+
+``u-boot-fh8626v100-partition.bin``
+    192 KiB padded U-Boot partition for an environment-preserving update.  It
+    is generated without requiring a bootstrap dump.
+
+``u-boot-fh8626v100-nor.bin``
+    320 KiB OpenIPC boot region.  Its environment sector is erased so the
+    compiled defaults are used.  Flashing this file replaces the existing
+    environment.
+
+``SHA256SUMS``
+    Checksums for every generated binary.
+
+RAM validation
+--------------
+
+Place the RAM build in the TFTP root and run the following from the vendor
+U-Boot::
 
     setenv autostart no
     tftpboot 0xa3000000 u-boot-fh8626v100-mainline-ram.bin
+    crc32 0xa3000000 ${filesize}
     go 0xa3000000
 
-The source image, initial stack at ``0xa2f00000``, vendor U-Boot at
-``0xa0800000``, and the main U-Boot relocation area at the top of SDRAM do not
-overlap.  Power cycling returns to the unchanged vendor boot path.
+Power cycling returns to the installed boot path.  Do not issue ``sf erase``
+or ``sf write`` during initial RAM validation.  Useful read-only checks are::
 
-Do not use ``sf erase`` or ``sf write`` while validating this RAM target.
+    gpio status -a
+    sf probe 0:0 50000000
+    sf read ${loadaddr} 0x50000 0x300000
+    iminfo ${loadaddr}
+    mii device
+    ping ${serverip}
+
+Environment migration
+---------------------
+
+The vendor U-Boot GPIO command syntax is incompatible with current U-Boot.
+When preserving a vendor environment, update only the boot-critical fields
+and retain board calibration variables such as motor ranges and lens data::
+
+    setenv ethact
+    setenv set_gpio 'gpio set 23; gpio clear 0; gpio clear 1; gpio clear 2; gpio clear 3; gpio clear 7; gpio clear 6; gpio clear 50; gpio clear 51; gpio clear 18; gpio clear 60'
+    setenv bootcmd 'run openipc_boot'
+
+Test the resulting boot before using ``saveenv``.
+
+Hardware validation
+-------------------
+
+The flash configuration has been validated on an ANJIA AJL33PQ0866 camera:
+
+* cold boot through the Fullhan ROM and bootstrap;
+* persistent environment read from SPI NOR;
+* two matching 3 MiB NOR reads at 50 MHz and valid legacy-image CRC through
+  the bounded FIFO path;
+* RMII PHY ID ``0x937c4024``, 100 Mbit/s full duplex, ping and TFTP;
+* GPIO banks 0 and 1 and the board output initialization sequence;
+* Linux 4.9 flash-root boot through the OpenIPC login prompt.
+
+A release image must pass the repeated-read and CRC gate after a cold boot.
+RAM-chainload success alone is insufficient because it can inherit earlier
+hardware initialization.

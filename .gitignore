@@ -7,6 +7,9 @@
 #
 .*
 !.checkpatch.conf
+!/.github/
+!/.github/workflows/
+!/.github/workflows/build.yml
 *.a
 *.asn1.[ch]
 *.bin
@@ -44,6 +47,8 @@
 *.ti-*
 # Build tree
 /build*
+!/build.sh
+/output/
 
 #
 # Top-level generic files
