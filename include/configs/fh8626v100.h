@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
+#ifndef __CONFIG_FH8626V100_H
+#define __CONFIG_FH8626V100_H
+
+#define CFG_SYS_SDRAM_BASE	0xa0000000
+#define CFG_SYS_UBOOT_BASE	CONFIG_TEXT_BASE
+
+#endif

@@ -1,0 +1,12 @@
+if TARGET_FH8626V100
+
+config SYS_BOARD
+	default "fh8626v100"
+
+config SYS_VENDOR
+	default "fullhan"
+
+config SYS_CONFIG_NAME
+	default "fh8626v100"
+
+endif

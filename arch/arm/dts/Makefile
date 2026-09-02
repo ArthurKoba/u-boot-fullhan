@@ -5,6 +5,7 @@ dtb-$(CONFIG_TARGET_TAURUS) += at91sam9g20-taurus.dtb
 dtb-$(CONFIG_TARGET_CORVUS) += at91sam9g45-corvus.dtb
 dtb-$(CONFIG_TARGET_GURNARD) += at91sam9g45-gurnard.dtb
 dtb-$(CONFIG_TARGET_SCM3005) += ax3005-scm3005.dtb
+dtb-$(CONFIG_TARGET_FH8626V100) += fh8626v100.dtb
 
 dtb-$(CONFIG_TARGET_SMDKC100) += s5pc1xx-smdkc100.dtb
 dtb-$(CONFIG_TARGET_S5P_GONI) += s5pc1xx-goni.dtb

@@ -56,6 +56,7 @@ PLATFORM_CPPFLAGS += $(arch-y) $(tune-y)
 machine-$(CONFIG_ARCH_AIROHA)		+= airoha
 machine-$(CONFIG_ARCH_APPLE)		+= apple
 machine-$(CONFIG_ARCH_ASPEED)		+= aspeed
+machine-$(CONFIG_ARCH_FH8626V100)	+= fh8626v100
 machine-$(CONFIG_ARCH_AT91)		+= at91
 machine-$(CONFIG_ARCH_BCM283X)		+= bcm283x
 machine-$(CONFIG_ARCH_BCMBCA)		+= bcmbca

@@ -1,0 +1,9 @@
+FH8626V100 BOARD
+M: Arthur Koba <61914203+ArthurKoba@users.noreply.github.com>
+S: Maintained
+F: arch/arm/dts/fh8626v100.dts
+F: arch/arm/mach-fh8626v100/
+F: board/fullhan/fh8626v100/
+F: configs/fh8626v100_ram_defconfig
+F: doc/board/fullhan/
+F: include/configs/fh8626v100.h

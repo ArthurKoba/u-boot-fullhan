@@ -1,0 +1,24 @@
+if ARCH_FH8626V100
+
+config SYS_ARCH
+	default "arm"
+
+config SYS_SOC
+	default "fh8626v100"
+
+config TEXT_BASE
+	default 0xa3000000
+
+config CUSTOM_SYS_INIT_SP_ADDR
+	default 0xa2f00000
+
+config TARGET_FH8626V100
+	bool "Fullhan FH8626V100 reference platform"
+	default y
+	help
+	  Enable the reference board target used to bring up U-Boot on
+	  FH8626V100-based IP cameras.
+
+source "board/fullhan/fh8626v100/Kconfig"
+
+endif
