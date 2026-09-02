@@ -2163,9 +2163,8 @@ config ARCH_FH8626V100
 	select HAS_CUSTOM_SYS_INIT_SP_ADDR
 	imply CMD_DM
 	help
-	  Support the Fullhan FH8626V100 ARM1176 camera SoC. The initial
-	  target is a RAM-loaded U-Boot which reuses clocks and SDRAM set up
-	  by the vendor bootstrap.
+	  Support the Fullhan FH8626V100 ARM1176 camera SoC, including
+	  cold-boot and RAM-chainload configurations.
 
 config ARCH_AXIADO
 	bool "Support Axiado SoCs"

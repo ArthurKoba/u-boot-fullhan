@@ -55,6 +55,10 @@
 #define DW_SPI_IDR			0x58
 #define DW_SPI_VERSION			0x5c
 #define DW_SPI_DR			0x60
+#define FH8626_SPI_CCFGR		0xf4
+#define FH8626_SPI_CCFGR_MODE_MASK	(GENMASK(10, 8) | GENMASK(6, 0))
+#define FH8626_SPI_CCFGR_NOR_MODE	0xe
+#define FH8626_SPI_CCFGR_ENABLE		BIT(13)
 
 /* Bit fields in CTRLR0 */
 /*
@@ -138,6 +142,7 @@ struct dw_spi_priv {
 	void *rx_end;
 	u32 fifo_len;			/* depth of the FIFO buffer */
 	u32 max_xfer;			/* Maximum transfer size (in bits) */
+	bool fifo_read_limit;		/* Limit memory reads to RX FIFO depth */
 
 	int bits_per_word;
 	int len;
@@ -215,6 +220,23 @@ static int dw_spi_dwc_init(struct udevice *bus, struct dw_spi_priv *priv)
 	priv->max_xfer = 32;
 	priv->update_cr0 = dw_spi_dwc_update_cr0;
 	return 0;
+}
+
+static int dw_spi_fh8626_init(struct udevice *bus, struct dw_spi_priv *priv)
+{
+	u32 val;
+
+	/*
+	 * FH8626V100 selects its NOR wrapper mode before using the standard
+	 * DesignWare SSI register interface.
+	 */
+	val = dw_read(priv, FH8626_SPI_CCFGR);
+	val &= ~FH8626_SPI_CCFGR_MODE_MASK;
+	val |= FH8626_SPI_CCFGR_ENABLE | FH8626_SPI_CCFGR_NOR_MODE;
+	dw_write(priv, FH8626_SPI_CCFGR, val);
+	priv->fifo_read_limit = true;
+
+	return dw_spi_apb_init(bus, priv);
 }
 
 static int request_gpio_cs(struct udevice *bus)
@@ -655,7 +677,8 @@ static int dw_spi_exec_op(struct spi_slave *slave, const struct spi_mem_op *op)
 				sts = dw_read(priv, DW_SPI_RISR);
 				if (sts & RISR_INT_RXOI) {
 					dev_err(bus, "FIFO overflow on Rx\n");
-					return -EIO;
+					ret = -EIO;
+					goto out;
 				}
 			}
 			prev_rx = priv->rx;
@@ -679,6 +702,7 @@ static int dw_spi_exec_op(struct spi_slave *slave, const struct spi_mem_op *op)
 		}
 	}
 
+out:
 	dw_write(priv, DW_SPI_SER, 0);
 	external_cs_manage(slave->dev, true);
 
@@ -689,7 +713,20 @@ static int dw_spi_exec_op(struct spi_slave *slave, const struct spi_mem_op *op)
 /* The size of ctrl1 limits data transfers to 64K */
 static int dw_spi_adjust_op_size(struct spi_slave *slave, struct spi_mem_op *op)
 {
-	op->data.nbytes = min(op->data.nbytes, (unsigned int)SZ_64K);
+	struct dw_spi_priv *priv = dev_get_priv(slave->dev->parent);
+	unsigned int max_size = SZ_64K;
+
+	/*
+	 * FH8626 cannot drain a continuous EEPROM-read stream fast enough at
+	 * normal NOR clocks.  Keeping NDF within the detected RX FIFO depth
+	 * lets the controller stop before the FIFO can overflow; spi-nor then
+	 * advances the address and issues the next bounded operation.
+	 */
+	if (priv->fifo_read_limit && op->data.dir == SPI_MEM_DATA_IN &&
+	    priv->fifo_len)
+		max_size = priv->fifo_len;
+
+	op->data.nbytes = min(op->data.nbytes, max_size);
 
 	return 0;
 }
@@ -780,6 +817,7 @@ static const struct udevice_id dw_spi_ids[] = {
 	{ .compatible = "snps,dw-apb-ssi-4.00a", .data = (ulong)dw_spi_apb_init },
 	{ .compatible = "snps,dw-apb-ssi-4.01", .data = (ulong)dw_spi_apb_init },
 	{ .compatible = "snps,dwc-ssi-1.01a", .data = (ulong)dw_spi_dwc_init },
+	{ .compatible = "fullhan,fh8626v100-spi", .data = (ulong)dw_spi_fh8626_init },
 
 	/* Compatible strings for specific SoCs */
 

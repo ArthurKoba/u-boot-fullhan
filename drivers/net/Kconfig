@@ -410,6 +410,16 @@ config ETH_DESIGNWARE_S700
 	  This provides glue layer to use Synopsys Designware Ethernet MAC
 	  present on Actions S700 SoC.
 
+config ETH_DESIGNWARE_FH8626V100
+	bool "Fullhan FH8626V100 glue for Synopsys Designware Ethernet MAC"
+	depends on ARCH_FH8626V100
+	select ETH_DESIGNWARE
+	help
+	  Enable the PMU reset and RMII speed control required by the
+	  Designware Ethernet MAC integrated in Fullhan FH8626V100 SoCs.
+	  The glue also applies the SoC-specific AHB reset sequence before
+	  handing the controller to the common Designware Ethernet driver.
+
 config ETH_DESIGNWARE_THEAD
 	bool "T-Head glue driver for Synopsys Designware Ethernet MAC"
 	depends on ETH_DESIGNWARE

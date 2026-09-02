@@ -48,7 +48,7 @@ static int dw_mdio_read(struct mii_dev *bus, int addr, int devad, int reg)
 	miiaddr = ((addr << MIIADDRSHIFT) & MII_ADDRMSK) |
 		  ((reg << MIIREGSHIFT) & MII_REGMSK);
 
-	writel(miiaddr | MII_CLKRANGE_150_250M | MII_BUSY, &mac_p->miiaddr);
+	writel(miiaddr | priv->mdio_clk_range | MII_BUSY, &mac_p->miiaddr);
 
 	start = get_timer(0);
 	while (get_timer(start) < timeout) {
@@ -73,7 +73,7 @@ static int dw_mdio_write(struct mii_dev *bus, int addr, int devad, int reg,
 	miiaddr = ((addr << MIIADDRSHIFT) & MII_ADDRMSK) |
 		  ((reg << MIIREGSHIFT) & MII_REGMSK) | MII_WRITE;
 
-	writel(miiaddr | MII_CLKRANGE_150_250M | MII_BUSY, &mac_p->miiaddr);
+	writel(miiaddr | priv->mdio_clk_range | MII_BUSY, &mac_p->miiaddr);
 
 	start = get_timer(0);
 	while (get_timer(start) < timeout) {
@@ -951,6 +951,7 @@ int designware_eth_probe(struct udevice *dev)
 	priv->dma_regs_p = (struct eth_dma_regs *)(ioaddr + DW_DMA_BASE_OFFSET);
 	priv->interface = pdata->phy_interface;
 	priv->max_speed = pdata->max_speed;
+	priv->mdio_clk_range = dev_read_u32_default(dev, "snps,clk-csr", MII_CLKRANGE_150_250M);
 
 #if IS_ENABLED(CONFIG_BITBANGMII) && IS_ENABLED(CONFIG_DM_GPIO)
 	if (dev_read_bool(dev, "snps,bitbang-mii")) {

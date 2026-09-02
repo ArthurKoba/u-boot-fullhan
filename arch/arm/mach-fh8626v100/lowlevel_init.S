@@ -3,6 +3,6 @@
 #include <linux/linkage.h>
 
 ENTRY(lowlevel_init)
-	/* The vendor bootstrap has already configured clocks and SDRAM. */
+	/* The ROM-loaded bootstrap configures SDRAM before entering U-Boot. */
 	bx	lr
 ENDPROC(lowlevel_init)

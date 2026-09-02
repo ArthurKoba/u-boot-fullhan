@@ -1,0 +1,53 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fh8626v100:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            bc bison build-essential flex gcc-arm-linux-gnueabi libssl-dev \
+            python3 python3-setuptools swig
+
+      - name: Test release packer
+        run: python3 test/py/tests/test_fh8626_bootchain.py
+
+      - name: Build flash target
+        env:
+          CROSS_COMPILE: arm-linux-gnueabi-
+        run: ./build.sh
+
+      - name: Check flash artifacts
+        run: |
+          test "$(stat -c %s output/u-boot-fh8626v100-partition.bin)" \
+            -eq $((0x30000))
+          test ! -e output/u-boot-fh8626v100-nor.bin
+          sha256sum --check output/SHA256SUMS
+
+      - name: Build RAM target
+        run: |
+          make O=build-ram CROSS_COMPILE=arm-linux-gnueabi- \
+            fh8626v100_ram_defconfig
+          make O=build-ram CROSS_COMPILE=arm-linux-gnueabi- -j2
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-boot-fh8626v100
+          path: |
+            output/u-boot-fh8626v100.bin
+            output/u-boot-fh8626v100-partition.bin
+            output/SHA256SUMS
+            build-ram/u-boot.bin

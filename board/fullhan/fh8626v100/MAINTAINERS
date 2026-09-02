@@ -4,6 +4,12 @@ S: Maintained
 F: arch/arm/dts/fh8626v100.dts
 F: arch/arm/mach-fh8626v100/
 F: board/fullhan/fh8626v100/
+F: .github/workflows/build.yml
+F: build.sh
 F: configs/fh8626v100_ram_defconfig
+F: configs/fh8626v100_flash_defconfig
 F: doc/board/fullhan/
 F: include/configs/fh8626v100.h
+F: README.md
+F: test/py/tests/test_fh8626_bootchain.py
+F: tools/fh8626_bootchain.py
