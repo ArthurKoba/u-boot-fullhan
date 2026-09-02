@@ -154,10 +154,10 @@ config CADENCE_TTC_TIMER
 
 config DESIGNWARE_APB_TIMER
 	bool "Designware APB Timer"
-	depends on TIMER && (ARCH_SOCFPGA || ARCH_ROCKCHIP)
+	depends on TIMER && (ARCH_FH8626V100 || ARCH_SOCFPGA || ARCH_ROCKCHIP)
 	help
 	  Enables support for the Designware APB Timer driver. This timer is
-	  present on Altera SoCFPGA SoCs.
+	  present on Fullhan FH8626V100, Altera SoCFPGA and Rockchip SoCs.
 
 config GXP_TIMER
 	bool "HPE GXP Timer"

@@ -1,0 +1,36 @@
+.. SPDX-License-Identifier: GPL-2.0+
+
+FH8626V100
+==========
+
+The FH8626V100 is an ARM1176-based Fullhan camera SoC.  The
+``fh8626v100_ram_defconfig`` target is the first-stage bring-up target.  It is
+linked at ``0xa3000000`` and expects the vendor bootstrap to have configured
+clocks and the 64 MiB SDRAM window at ``0xa0000000``.
+
+The RAM target currently provides the DesignWare APB UART and timer, reset,
+64 MiB DRAM description, and legacy ATAG boot with machine ID 9999.  Its
+environment is non-persistent and it does not write SPI flash.
+
+Build
+-----
+
+Use an ARM EABI cross compiler::
+
+    make fh8626v100_ram_defconfig
+    make CROSS_COMPILE=arm-linux-
+
+RAM test from the vendor U-Boot
+--------------------------------
+
+Place ``u-boot.bin`` in the TFTP root and run::
+
+    setenv autostart no
+    tftpboot 0xa3000000 u-boot-fh8626v100-mainline-ram.bin
+    go 0xa3000000
+
+The source image, initial stack at ``0xa2f00000``, vendor U-Boot at
+``0xa0800000``, and the main U-Boot relocation area at the top of SDRAM do not
+overlap.  Power cycling returns to the unchanged vendor boot path.
+
+Do not use ``sf erase`` or ``sf write`` while validating this RAM target.

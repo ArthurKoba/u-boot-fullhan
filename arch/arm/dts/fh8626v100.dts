@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+
+/ {
+	model = "Fullhan FH8626V100 reference platform";
+	compatible = "fullhan,fh8626v100";
+
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@a0000000 {
+		device_type = "memory";
+		reg = <0xa0000000 0x04000000>;
+	};
+
+	timer_clk: clock-1000000 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <1000000>;
+	};
+
+	uart0: serial@f0700000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0xf0700000 0x1000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		clock-frequency = <16666667>;
+		current-speed = <115200>;
+		status = "okay";
+		bootph-all;
+	};
+
+	timer0: timer@f0c00000 {
+		compatible = "snps,dw-apb-timer";
+		reg = <0xf0c00000 0x1000>;
+		clocks = <&timer_clk>;
+		status = "okay";
+	};
+};

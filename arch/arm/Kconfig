@@ -2153,6 +2153,20 @@ config ARCH_ASPEED
 	select OF_CONTROL
 	imply CMD_DM
 
+config ARCH_FH8626V100
+	bool "Support Fullhan FH8626V100 SoCs"
+	select CPU_ARM1176
+	select DM
+	select OF_CONTROL
+	select CLK
+	select TIMER
+	select HAS_CUSTOM_SYS_INIT_SP_ADDR
+	imply CMD_DM
+	help
+	  Support the Fullhan FH8626V100 ARM1176 camera SoC. The initial
+	  target is a RAM-loaded U-Boot which reuses clocks and SDRAM set up
+	  by the vendor bootstrap.
+
 config ARCH_AXIADO
 	bool "Support Axiado SoCs"
 	select AXIADO_AX3005
@@ -2298,6 +2312,8 @@ source "arch/arm/mach-airoha/Kconfig"
 source "arch/arm/mach-apple/Kconfig"
 
 source "arch/arm/mach-aspeed/Kconfig"
+
+source "arch/arm/mach-fh8626v100/Kconfig"
 
 source "arch/arm/mach-at91/Kconfig"
 

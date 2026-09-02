@@ -30,6 +30,7 @@ Board-specific doc
    coreboot/index
    emcraft/index
    emulation/index
+   fullhan/index
    gateworks/index
    google/index
    highbank/index
