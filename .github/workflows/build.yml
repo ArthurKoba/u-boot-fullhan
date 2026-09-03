@@ -33,8 +33,14 @@ jobs:
         run: |
           test "$(stat -c %s output/u-boot-fh8626v100-partition.bin)" \
             -eq $((0x30000))
-          test ! -e output/u-boot-fh8626v100-nor.bin
-          sha256sum --check output/SHA256SUMS
+          test "$(stat -c %s output/u-boot-fh8626v100-bootstrap.bin)" \
+            -eq $((0x10000))
+          test "$(stat -c %s output/u-boot-fh8626v100-nor.bin)" \
+            -eq $((0x50000))
+          (cd output && sha256sum --check SHA256SUMS)
+          python3 tools/fh8626_bootchain.py \
+            output/u-boot-fh8626v100-nor.bin --inspect | \
+            grep -q 'uboot.*size=0x30000/0x30000.*jamcrc=0x251d4c31/0x251d4c31 OK'
 
       - name: Build RAM target
         run: |
@@ -48,6 +54,8 @@ jobs:
           name: u-boot-fh8626v100
           path: |
             output/u-boot-fh8626v100.bin
+            output/u-boot-fh8626v100-bootstrap.bin
+            output/u-boot-fh8626v100-nor.bin
             output/u-boot-fh8626v100-partition.bin
             output/SHA256SUMS
             build-ram/u-boot.bin
