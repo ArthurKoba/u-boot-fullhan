@@ -64,14 +64,24 @@ binary and padded U-Boot partition are always written to ``output/``::
 
     CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 
-The Boot ROM does not load U-Boot directly.  A board-specific Fullhan
-bootstrap is required.  It is not part of this source tree because no
-redistribution licence is available.  Given a verified 8 MiB stock dump,
-the release script validates and patches its bootstrap descriptor and emits
-the standard OpenIPC NOR asset::
+The Boot ROM does not load U-Boot directly.  It interprets a board-specific
+64 KiB Fullhan container.  The recovered header, descriptors, DDR parameter
+records and legacy data are represented by the auditable
+``board/fullhan/fh8626v100/bootrom.json`` manifest.  ``build.sh`` generates the
+container and the standard OpenIPC NOR asset without a vendor binary blob.
+This representation is a byte-exact reproduction of the working original; it
+is not a complete semantic reverse engineering of the mask-ROM interpreter or
+every container field.  The generated boot chain has successfully started
+U-Boot and loaded the installed firmware on the target camera.
+
+A verified 8 MiB stock dump can optionally replace the manifest as an
+independent recovery and validation input::
 
     FH8626_FLASH_BACKUP=/path/to/stock-8m.bin \
       CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
+
+The recovered container format and the confidence level of every known field
+are documented in :doc:`fh8626v100-boot-format`.
 
 The outputs are:
 
@@ -79,7 +89,8 @@ The outputs are:
     Raw U-Boot binary.
 
 ``u-boot-fh8626v100-bootstrap.bin``
-    64 KiB validated bootstrap with updated U-Boot size and JAMCRC.
+    64 KiB generated Boot ROM container for the permanent fixed-envelope
+    U-Boot contract.
 
 ``u-boot-fh8626v100-partition.bin``
     192 KiB padded U-Boot partition for an environment-preserving update.  It
@@ -92,6 +103,59 @@ The outputs are:
 
 ``SHA256SUMS``
     Checksums for every generated binary.
+
+Atomic boot-chain update
+------------------------
+
+The vendor bootstrap describes the vendor U-Boot's build-specific size and
+JAMCRC.  It cannot load an arbitrary replacement.  This port instead uses a
+permanent ROM-visible contract: raw size ``0x30000``, aligned size
+``0x30000`` and JAMCRC ``0x251d4c31``.  The packer fills the unused partition
+tail and calculates a four-byte correction at its end, so different U-Boot
+builds retain the same geometry and checksum.
+
+Keep a verified full-flash backup and a separate copy of the installed U-Boot
+partition before any persistent update.  After the RAM target and the flash
+binary have passed their non-persistent tests, program the pair in this order:
+
+#. erase, write, read back and compare the fixed-envelope U-Boot partition at
+   ``0x20000``;
+#. without resetting, erase, write, read back and compare the generated
+   permanent bootstrap at ``0x00000``;
+#. reset only after both comparisons pass.
+
+This paired procedure is required exactly once when migrating from the vendor
+bootstrap.  After a successful cold boot through the permanent bootstrap,
+later U-Boot releases update only the partition at ``0x20000``; rewriting the
+bootstrap is neither necessary nor recommended.
+
+An interactive migration from the vendor U-Boot uses separate buffers and
+keeps the environment sector untouched.  Confirm that TFTP reports exactly
+``0x30000`` and ``0x10000`` bytes before the first erase::
+
+    sf probe 0:0 50000000
+    tftpboot 0xa1000000 u-boot-fh8626v100-partition.bin
+    tftpboot 0xa1040000 u-boot-fh8626v100-bootstrap.bin
+    sf erase 0x20000 0x30000
+    sf write 0xa1000000 0x20000 0x30000
+    sf read 0xa1080000 0x20000 0x30000
+    cmp.b 0xa1000000 0xa1080000 0x30000
+    sf erase 0x00000 0x10000
+    sf write 0xa1040000 0x00000 0x10000
+    sf read 0xa10c0000 0x00000 0x10000
+    cmp.b 0xa1040000 0xa10c0000 0x10000
+
+Both ``cmp.b`` commands must report every byte equal before ``reset``.  For a
+later fixed-envelope release, repeat only the ``0x20000`` partition write and
+comparison; do not rewrite offset ``0x00000``.
+
+Do not erase or write the environment sector at ``0x10000`` during an
+environment-preserving update.  ``u-boot-fh8626v100-nor.bin`` includes an
+erased environment sector and is intended only when resetting the environment
+is deliberate.  If power is lost during the one-time migration, or the board
+is reset with a vendor/fixed-envelope mismatch, U-Boot cannot provide
+recovery; restore the previous matched pair or write the permanent bootstrap
+with an external SPI-NOR programmer.
 
 RAM validation
 --------------
@@ -143,3 +207,7 @@ The flash configuration has been validated on an ANJIA AJL33PQ0866 camera:
 A release image must pass the repeated-read and CRC gate after a cold boot.
 RAM-chainload success alone is insufficient because it can inherit earlier
 hardware initialization.
+
+The fixed-envelope packer is machine-tested, but the one-time migration to its
+permanent bootstrap still requires cold-boot hardware validation.  Until that
+test passes, it is a release candidate rather than a hardware-proven updater.
