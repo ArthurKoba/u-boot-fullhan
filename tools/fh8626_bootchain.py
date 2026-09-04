@@ -16,6 +16,8 @@ ENVIRONMENT_SIZE = 0x10000
 UBOOT_DESC = 0x140
 UBOOT_OFFSET = 0x20000
 UBOOT_SLOT_SIZE = 0x30000
+STOCK_UBOOT_RAW_SIZE = 0x2BAE4
+UBOOT_ROM_ENVELOPE_SIZE = 0x2BB00
 BOOT_REGION_SIZE = UBOOT_OFFSET + UBOOT_SLOT_SIZE
 FLASH_SIZE = 0x800000
 FIXED_UBOOT_JAMCRC = 0x251D4C31
@@ -454,7 +456,7 @@ def build_bootstrap(manifest: dict, uboot_image: bytes | None = None) -> bytes:
             0x3c: manifest_value(entry["prefix_size"]),
         }
         if entry["name"] == "uboot" and uboot_image is not None:
-            values[0x18] = UBOOT_SLOT_SIZE
+            values[0x18] = STOCK_UBOOT_RAW_SIZE
             values[0x20] = uboot_aligned
             values[0x34] = uboot_checksum
         for field_offset, value in values.items():
@@ -524,11 +526,11 @@ def build_bootstrap(manifest: dict, uboot_image: bytes | None = None) -> bytes:
 
 
 def build_partition(image: bytes) -> tuple[bytes, int, int]:
-    """Return a fixed-envelope U-Boot partition and stable ROM contract."""
+    """Return a stock-bootstrap-compatible U-Boot partition."""
     if not image:
         raise ValueError("U-Boot image is empty")
 
-    payload_limit = UBOOT_SLOT_SIZE - 4
+    payload_limit = UBOOT_ROM_ENVELOPE_SIZE - 4
     if len(image) > payload_limit:
         raise ValueError(
             f"U-Boot size {len(image):#x} exceeds fixed-envelope payload "
@@ -537,12 +539,13 @@ def build_partition(image: bytes) -> tuple[bytes, int, int]:
 
     partition = bytearray(b"\xff" * UBOOT_SLOT_SIZE)
     partition[:len(image)] = image
-    partition[-4:] = crc32_fixup(
-        bytes(partition[:-4]), FIXED_UBOOT_JAMCRC
+    fixup_offset = UBOOT_ROM_ENVELOPE_SIZE - 4
+    partition[fixup_offset:UBOOT_ROM_ENVELOPE_SIZE] = crc32_fixup(
+        bytes(partition[:fixup_offset]), FIXED_UBOOT_JAMCRC
     )
-    if jamcrc(partition) != FIXED_UBOOT_JAMCRC:
+    if jamcrc(partition[:UBOOT_ROM_ENVELOPE_SIZE]) != FIXED_UBOOT_JAMCRC:
         raise ValueError("fixed-envelope JAMCRC verification failed")
-    return bytes(partition), UBOOT_SLOT_SIZE, FIXED_UBOOT_JAMCRC
+    return bytes(partition), UBOOT_ROM_ENVELOPE_SIZE, FIXED_UBOOT_JAMCRC
 
 
 def validate_flash_backup(flash: bytes) -> tuple[int, int]:
@@ -565,11 +568,16 @@ def validate_flash_backup(flash: bytes) -> tuple[int, int]:
     if uboot.entry_address != 0xa0800000:
         raise ValueError("unexpected stock U-Boot entry address")
 
+    if uboot.raw_size != STOCK_UBOOT_RAW_SIZE:
+        raise ValueError("incompatible stock U-Boot raw size")
+
     old_aligned = uboot.aligned_size
-    if not old_aligned or old_aligned > UBOOT_SLOT_SIZE:
-        raise ValueError("invalid U-Boot size in bootstrap descriptor")
+    if old_aligned != UBOOT_ROM_ENVELOPE_SIZE:
+        raise ValueError("incompatible stock U-Boot envelope size")
 
     old_checksum = uboot.checksum
+    if old_checksum != FIXED_UBOOT_JAMCRC:
+        raise ValueError("incompatible stock U-Boot JAMCRC")
     calculated = descriptor_jamcrc(flash, uboot)
     if calculated != old_checksum:
         raise ValueError(
@@ -597,7 +605,10 @@ def write_artifacts(
     print(f"binary size:   {len(image):#010x}")
     print(f"envelope size: {aligned:#010x}")
     print(f"fixed JAMCRC:  {checksum:#010x}")
-    print(f"payload spare: {UBOOT_SLOT_SIZE - 4 - len(image):#010x}")
+    print(
+        "payload spare: "
+        f"{UBOOT_ROM_ENVELOPE_SIZE - 4 - len(image):#010x}"
+    )
 
     if flash is None and bootstrap is None:
         print("bootstrap:     not supplied; skipping full NOR image")
@@ -606,9 +617,6 @@ def write_artifacts(
     if flash is not None:
         old_aligned, old_checksum = validate_flash_backup(flash)
         bootstrap_data = bytearray(flash[:BOOTSTRAP_SIZE])
-        put_u32(bootstrap_data, UBOOT_DESC + 0x18, UBOOT_SLOT_SIZE)
-        put_u32(bootstrap_data, UBOOT_DESC + 0x20, aligned)
-        put_u32(bootstrap_data, UBOOT_DESC + 0x34, checksum)
         print(f"old size:      {u32(flash, UBOOT_DESC + 0x18):#010x}")
         print(f"old aligned:   {old_aligned:#010x}")
         print(f"old JAMCRC:    {old_checksum:#010x} (verified)")

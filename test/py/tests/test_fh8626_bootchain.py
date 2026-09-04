@@ -51,7 +51,9 @@ class Fh8626BootchainTest(unittest.TestCase):
             BOOTCHAIN.UBOOT_DESC:BOOTCHAIN.UBOOT_DESC + 16
         ] = b"uboot".ljust(16, b"\0")
         BOOTCHAIN.put_u32(
-            flash, BOOTCHAIN.UBOOT_DESC + 0x18, len(old_image)
+            flash,
+            BOOTCHAIN.UBOOT_DESC + 0x18,
+            BOOTCHAIN.STOCK_UBOOT_RAW_SIZE,
         )
         BOOTCHAIN.put_u32(
             flash, BOOTCHAIN.UBOOT_DESC + 0x14, 0x13579bdf
@@ -140,7 +142,10 @@ class Fh8626BootchainTest(unittest.TestCase):
             self.assertEqual(len(partition), BOOTCHAIN.UBOOT_SLOT_SIZE)
             self.assertEqual(partition[:len(image)], image)
             self.assertEqual(
-                BOOTCHAIN.jamcrc(partition), BOOTCHAIN.FIXED_UBOOT_JAMCRC
+                BOOTCHAIN.jamcrc(
+                    partition[:BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE]
+                ),
+                BOOTCHAIN.FIXED_UBOOT_JAMCRC,
             )
             self.assertFalse(
                 (output / "u-boot-fh8626v100-nor.bin").exists()
@@ -162,10 +167,14 @@ class Fh8626BootchainTest(unittest.TestCase):
             nor = (output / "u-boot-fh8626v100-nor.bin").read_bytes()
 
             self.assertEqual(len(bootstrap), BOOTCHAIN.BOOTSTRAP_SIZE)
+            self.assertEqual(
+                bootstrap,
+                self.make_flash_backup()[:BOOTCHAIN.BOOTSTRAP_SIZE],
+            )
             self.assertEqual(len(nor), BOOTCHAIN.BOOT_REGION_SIZE)
             self.assertEqual(
                 BOOTCHAIN.u32(bootstrap, BOOTCHAIN.UBOOT_DESC + 0x18),
-                BOOTCHAIN.UBOOT_SLOT_SIZE,
+                BOOTCHAIN.STOCK_UBOOT_RAW_SIZE,
             )
             self.assertEqual(
                 BOOTCHAIN.u32(bootstrap, BOOTCHAIN.UBOOT_DESC + 0x20),
@@ -191,13 +200,14 @@ class Fh8626BootchainTest(unittest.TestCase):
         second = BOOTCHAIN.build_bootstrap(manifest, b"different next build")
 
         self.assertEqual(first, second)
+        self.assertEqual(first, BOOTCHAIN.build_bootstrap(manifest))
         self.assertEqual(
             BOOTCHAIN.u32(first, BOOTCHAIN.UBOOT_DESC + 0x18),
-            BOOTCHAIN.UBOOT_SLOT_SIZE,
+            BOOTCHAIN.STOCK_UBOOT_RAW_SIZE,
         )
         self.assertEqual(
             BOOTCHAIN.u32(first, BOOTCHAIN.UBOOT_DESC + 0x20),
-            BOOTCHAIN.UBOOT_SLOT_SIZE,
+            BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE,
         )
         self.assertEqual(
             BOOTCHAIN.u32(first, BOOTCHAIN.UBOOT_DESC + 0x34),
@@ -211,10 +221,23 @@ class Fh8626BootchainTest(unittest.TestCase):
 
         self.assertNotEqual(first, second)
         self.assertEqual(
-            BOOTCHAIN.jamcrc(first), BOOTCHAIN.FIXED_UBOOT_JAMCRC
+            BOOTCHAIN.jamcrc(
+                first[:BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE]
+            ),
+            BOOTCHAIN.FIXED_UBOOT_JAMCRC,
         )
         self.assertEqual(
-            BOOTCHAIN.jamcrc(second), BOOTCHAIN.FIXED_UBOOT_JAMCRC
+            BOOTCHAIN.jamcrc(
+                second[:BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE]
+            ),
+            BOOTCHAIN.FIXED_UBOOT_JAMCRC,
+        )
+        self.assertEqual(
+            first[BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE:],
+            b"\xff" * (
+                BOOTCHAIN.UBOOT_SLOT_SIZE
+                - BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE
+            ),
         )
 
     def test_manifest_build_produces_complete_nor_image(self):
@@ -251,11 +274,11 @@ class Fh8626BootchainTest(unittest.TestCase):
 
     def test_rejects_oversized_uboot(self):
         """The immutable bootstrap slot limit is enforced."""
-        accepted = b"x" * (BOOTCHAIN.UBOOT_SLOT_SIZE - 4)
+        accepted = b"x" * (BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE - 4)
         partition, _, _ = BOOTCHAIN.build_partition(accepted)
         self.assertEqual(partition[:len(accepted)], accepted)
 
-        image = b"x" * (BOOTCHAIN.UBOOT_SLOT_SIZE - 3)
+        image = b"x" * (BOOTCHAIN.UBOOT_ROM_ENVELOPE_SIZE - 3)
         with self.assertRaisesRegex(ValueError, "exceeds fixed-envelope"):
             BOOTCHAIN.build_partition(image)
 

@@ -363,17 +363,17 @@ Manifest format version 2 preserves all descriptor words, all 240 parameter
 records (including four trailing zero records), the active-record count, the
 unknown legacy tag and the retained strings.  The checked-in manifest therefore
 reconstructs all 65536 bytes of the validated stock
-container exactly when no replacement payload is supplied.  For release
-images, the three confirmed U-Boot descriptor fields are changed once to a
-permanent contract: exact size ``0x30000``, aligned size ``0x30000`` and
-JAMCRC ``0x251d4c31``.  Each partition reserves its last four bytes for a
-calculated CRC correction, allowing different U-Boot binaries to satisfy that
-same descriptor without rewriting the bootstrap.
+container exactly.  Release images retain the stock U-Boot descriptor: raw
+size ``0x2bae4``, aligned size ``0x2bb00`` and JAMCRC ``0x251d4c31``.  Each
+partition reserves four bytes at the end of that aligned envelope for a
+calculated CRC correction, allowing different U-Boot binaries to satisfy the
+unchanged descriptor without rewriting the bootstrap.
 
-The stock container reconstruction and mainline U-Boot port have separately
-passed hardware boot tests.  The fixed-envelope migration path is fully
-machine-checked but still requires its first cold-boot hardware validation;
-it must not be described as hardware-proven until that test passes.
+The stock container reconstruction, mainline U-Boot port and stock-envelope
+U-Boot-only replacement have passed hardware boot tests.  On 2026-09-04 the
+unchanged container loaded the replacement from its original NOR offset after
+a cold reset; that U-Boot then consumed the preserved vendor environment and
+started the complete installed stock firmware.
 
 The validated production binary representation is therefore reproducible,
 but this must not be confused with a complete reconstruction of every

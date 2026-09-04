@@ -89,8 +89,8 @@ The outputs are:
     Raw U-Boot binary.
 
 ``u-boot-fh8626v100-bootstrap.bin``
-    64 KiB generated Boot ROM container for the permanent fixed-envelope
-    U-Boot contract.
+    Byte-identical 64 KiB stock Boot ROM container retained as a recovery and
+    validation reference.  A normal U-Boot update does not write it.
 
 ``u-boot-fh8626v100-partition.bin``
     192 KiB padded U-Boot partition for an environment-preserving update.  It
@@ -104,58 +104,46 @@ The outputs are:
 ``SHA256SUMS``
     Checksums for every generated binary.
 
-Atomic boot-chain update
-------------------------
+Stock-bootstrap-compatible update
+---------------------------------
 
-The vendor bootstrap describes the vendor U-Boot's build-specific size and
-JAMCRC.  It cannot load an arbitrary replacement.  This port instead uses a
-permanent ROM-visible contract: raw size ``0x30000``, aligned size
-``0x30000`` and JAMCRC ``0x251d4c31``.  The packer fills the unused partition
-tail and calculates a four-byte correction at its end, so different U-Boot
-builds retain the same geometry and checksum.
+The vendor bootstrap remains unchanged.  This port satisfies its existing
+ROM-visible contract: raw size ``0x2bae4``, aligned size ``0x2bb00`` and
+JAMCRC ``0x251d4c31``.  The packer pads the image and calculates a four-byte
+correction at the end of the aligned envelope, so different U-Boot builds
+retain the stock geometry and checksum.
 
 Keep a verified full-flash backup and a separate copy of the installed U-Boot
 partition before any persistent update.  After the RAM target and the flash
-binary have passed their non-persistent tests, program the pair in this order:
+binary have passed their non-persistent tests:
 
-#. erase, write, read back and compare the fixed-envelope U-Boot partition at
+#. erase, write, read back and compare only the U-Boot partition at
    ``0x20000``;
-#. without resetting, erase, write, read back and compare the generated
-   permanent bootstrap at ``0x00000``;
-#. reset only after both comparisons pass.
+#. leave bootstrap ``0x00000`` and environment ``0x10000`` untouched;
+#. reset only after the partition comparison passes.
 
-This paired procedure is required exactly once when migrating from the vendor
-bootstrap.  After a successful cold boot through the permanent bootstrap,
-later U-Boot releases update only the partition at ``0x20000``; rewriting the
-bootstrap is neither necessary nor recommended.
+The same U-Boot-only procedure applies to the first migration and later
+updates.  Rewriting the bootstrap is neither necessary nor recommended.
 
 An interactive migration from the vendor U-Boot uses separate buffers and
-keeps the environment sector untouched.  Confirm that TFTP reports exactly
-``0x30000`` and ``0x10000`` bytes before the first erase::
+keeps both earlier sectors untouched.  Confirm that TFTP reports exactly
+``0x30000`` bytes before the erase::
 
     sf probe 0:0 50000000
     tftpboot 0xa1000000 u-boot-fh8626v100-partition.bin
-    tftpboot 0xa1040000 u-boot-fh8626v100-bootstrap.bin
     sf erase 0x20000 0x30000
     sf write 0xa1000000 0x20000 0x30000
     sf read 0xa1080000 0x20000 0x30000
     cmp.b 0xa1000000 0xa1080000 0x30000
-    sf erase 0x00000 0x10000
-    sf write 0xa1040000 0x00000 0x10000
-    sf read 0xa10c0000 0x00000 0x10000
-    cmp.b 0xa1040000 0xa10c0000 0x10000
 
-Both ``cmp.b`` commands must report every byte equal before ``reset``.  For a
-later fixed-envelope release, repeat only the ``0x20000`` partition write and
-comparison; do not rewrite offset ``0x00000``.
+The ``cmp.b`` command must report every byte equal before ``reset``.  Do not
+erase or write offset ``0x00000``.
 
 Do not erase or write the environment sector at ``0x10000`` during an
 environment-preserving update.  ``u-boot-fh8626v100-nor.bin`` includes an
 erased environment sector and is intended only when resetting the environment
-is deliberate.  If power is lost during the one-time migration, or the board
-is reset with a vendor/fixed-envelope mismatch, U-Boot cannot provide
-recovery; restore the previous matched pair or write the permanent bootstrap
-with an external SPI-NOR programmer.
+is deliberate.  If power is lost while the U-Boot partition is being written,
+restore the verified full-flash backup with an external SPI-NOR programmer.
 
 RAM validation
 --------------
@@ -181,15 +169,15 @@ or ``sf write`` during initial RAM validation.  Useful read-only checks are::
 Environment migration
 ---------------------
 
-The vendor U-Boot GPIO command syntax is incompatible with current U-Boot.
-When preserving a vendor environment, update only the boot-critical fields
-and retain board calibration variables such as motor ranges and lens data::
+The flash target accepts the vendor ``gpio <pin> out <0|1>`` syntax and
+provides its ``kload`` command.  It also ignores the stale ``ethact=FH EMAC``
+selection in memory so driver-model Ethernet can select ``eth0``.  The
+validated vendor environment therefore boots without a migration-time rewrite
+and retains calibration variables such as motor ranges and lens data.
 
-    setenv ethact
-    setenv set_gpio 'gpio set 23; gpio clear 0; gpio clear 1; gpio clear 2; gpio clear 3; gpio clear 7; gpio clear 6; gpio clear 50; gpio clear 51; gpio clear 18; gpio clear 60'
-    setenv bootcmd 'run openipc_boot'
-
-Test the resulting boot before using ``saveenv``.
+Do not use ``saveenv`` until a cold boot with the preserved environment has
+passed.  The complete migration and recovery checklist is documented in
+:doc:`fh8626v100-stock-migration`.
 
 Hardware validation
 -------------------
@@ -208,6 +196,7 @@ A release image must pass the repeated-read and CRC gate after a cold boot.
 RAM-chainload success alone is insufficient because it can inherit earlier
 hardware initialization.
 
-The fixed-envelope packer is machine-tested, but the one-time migration to its
-permanent bootstrap still requires cold-boot hardware validation.  Until that
-test passes, it is a release candidate rather than a hardware-proven updater.
+The stock-envelope packer and U-Boot-only replacement passed a cold-boot test
+on 2026-09-04.  The unchanged stock bootstrap loaded the new U-Boot, which
+loaded the preserved vendor environment and started the complete installed
+stock firmware.  The same artifact path had already booted OpenIPC.

@@ -7,4 +7,5 @@ Fullhan
    :maxdepth: 2
 
    fh8626v100
+   fh8626v100-stock-migration
    fh8626v100-boot-format

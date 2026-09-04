@@ -147,6 +147,20 @@ static int do_gpio(struct cmd_tbl *cmdtp, int flag, int argc,
 	bool all = false;
 #endif
 
+	/* Preserve the vendor environment syntax: gpio <pin> out <0|1>. */
+	if (IS_ENABLED(CONFIG_ARCH_FH8626V100) && argc == 4 &&
+	    !strcmp(argv[2], "out")) {
+		char *compat_argv[4];
+
+		if (strcmp(argv[3], "0") && strcmp(argv[3], "1"))
+			return CMD_RET_USAGE;
+		compat_argv[0] = argv[0];
+		compat_argv[1] = !strcmp(argv[3], "0") ? "clear" : "set";
+		compat_argv[2] = argv[1];
+		compat_argv[3] = NULL;
+		return do_gpio(cmdtp, flag, 3, compat_argv);
+	}
+
 	if (argc < 2)
  show_usage:
 		return CMD_RET_USAGE;

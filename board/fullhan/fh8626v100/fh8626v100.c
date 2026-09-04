@@ -7,6 +7,7 @@
  */
 
 #include <init.h>
+#include <env.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <asm/global_data.h>
@@ -78,6 +79,17 @@ int board_init(void)
 {
 	fh8626_board_io_init();
 	gd->bd->bi_boot_params = FH8626_BOOT_PARAMS;
+
+	return 0;
+}
+
+int board_late_init(void)
+{
+	const char *ethact = env_get("ethact");
+
+	/* The vendor environment names the same controller "FH EMAC". */
+	if (ethact && !strcmp(ethact, "FH EMAC"))
+		env_set("ethact", NULL);
 
 	return 0;
 }

@@ -40,7 +40,7 @@ jobs:
           (cd output && sha256sum --check SHA256SUMS)
           python3 tools/fh8626_bootchain.py \
             output/u-boot-fh8626v100-nor.bin --inspect | \
-            grep -q 'uboot.*size=0x30000/0x30000.*jamcrc=0x251d4c31/0x251d4c31 OK'
+            grep -q 'uboot.*size=0x2bae4/0x2bb00.*jamcrc=0x251d4c31/0x251d4c31 OK'
 
       - name: Build RAM target
         run: |
