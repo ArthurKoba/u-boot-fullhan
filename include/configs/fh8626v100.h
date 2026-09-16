@@ -24,7 +24,7 @@
 		"gpio clear 18; gpio clear 60\0" \
 	"openipc_args=setenv bootargs console=${console} mem=${mem} " \
 		"panic=20 mtdparts=${mtdparts} root=/dev/mtdblock5 " \
-		"rootfstype=squashfs ro init=/init\0" \
+		"rootfstype=squashfs ro init=/init ethaddr=${ethaddr}\0" \
 	"openipc_boot=run set_gpio; run openipc_args; sf probe 0:0; " \
 		"sf read ${baseaddr} 0x050000 ${kern_len}; " \
 		"bootm ${baseaddr}\0" \
