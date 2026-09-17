@@ -10,3 +10,4 @@ Fullhan
    fh8626v100-openipc-migration
    fh8626v100-stock-migration
    fh8626v100-boot-format
+   fh8626v100-history
