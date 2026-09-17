@@ -18,6 +18,7 @@ STOCK_SPEC.loader.exec_module(STOCK)
 BOOTSTRAP_SIZE = 0x10000
 UBOOT_OFFSET = 0x10000
 UBOOT_SLOT_SIZE = 0x30000
+UBOOT_ALIGNMENT = 0x100
 ENVIRONMENT_OFFSET = 0x40000
 ENVIRONMENT_SIZE = 0x10000
 BOOT_PARTITION_SIZE = 0x40000
@@ -28,7 +29,6 @@ ROOTFS_OFFSET = 0x250000
 ROOTFS_SIZE = 0x500000
 ROOTFS_DATA_OFFSET = 0x750000
 FLASH_SIZE = 0x800000
-FIXED_UBOOT_JAMCRC = STOCK.FIXED_UBOOT_JAMCRC
 
 DEFAULT_MANIFEST = (
     ROOT / "board" / "fullhan" / "fh8626v100" / "bootrom.json"
@@ -36,31 +36,40 @@ DEFAULT_MANIFEST = (
 ARTIFACT_PREFIX = "u-boot-fh8626v100-anjia-ajl33pq0866"
 
 
-def build_uboot_partition(image: bytes) -> bytes:
-    """Pad U-Boot to the 192 KiB board payload contract."""
+def align_up(value: int, alignment: int) -> int:
+    """Round *value* up to an integer power-of-two alignment."""
+    if alignment <= 0 or alignment & (alignment - 1):
+        raise ValueError("alignment must be a positive power of two")
+    return (value + alignment - 1) & ~(alignment - 1)
+
+
+def build_uboot_partition(image: bytes) -> tuple[bytes, int, int]:
+    """Pad U-Boot to its 192 KiB physical slot and derive ROM metadata."""
     if not image:
         raise ValueError("U-Boot image is empty")
-
-    payload_limit = UBOOT_SLOT_SIZE - 4
-    if len(image) > payload_limit:
+    if len(image) > UBOOT_SLOT_SIZE:
         raise ValueError(
-            f"U-Boot size {len(image):#x} exceeds OpenIPC payload limit "
-            f"{payload_limit:#x}"
+            f"U-Boot size {len(image):#x} exceeds OpenIPC slot "
+            f"{UBOOT_SLOT_SIZE:#x}"
+        )
+
+    aligned_size = align_up(len(image), UBOOT_ALIGNMENT)
+    if aligned_size > UBOOT_SLOT_SIZE:
+        raise ValueError(
+            f"aligned U-Boot size {aligned_size:#x} exceeds OpenIPC slot "
+            f"{UBOOT_SLOT_SIZE:#x}"
         )
 
     partition = bytearray(b"\xff" * UBOOT_SLOT_SIZE)
     partition[:len(image)] = image
-    partition[-4:] = STOCK.crc32_fixup(
-        bytes(partition[:-4]), FIXED_UBOOT_JAMCRC
-    )
-    if STOCK.jamcrc(partition) != FIXED_UBOOT_JAMCRC:
-        raise ValueError("OpenIPC U-Boot JAMCRC verification failed")
-
-    return bytes(partition)
+    checksum = STOCK.jamcrc(partition[:aligned_size])
+    return bytes(partition), aligned_size, checksum
 
 
-def build_openipc_bootstrap(manifest: dict) -> bytes:
-    """Move the ROM-visible U-Boot payload into OpenIPC's 256 KiB boot area."""
+def build_openipc_bootstrap(
+    manifest: dict, raw_size: int, aligned_size: int, checksum: int
+) -> bytes:
+    """Move U-Boot into OpenIPC's boot area and describe the actual payload."""
     bootstrap = bytearray(STOCK.build_bootstrap(manifest))
     descriptors = STOCK.parse_descriptors(bootstrap)
     uboot = next(
@@ -71,20 +80,26 @@ def build_openipc_bootstrap(manifest: dict) -> bytes:
         raise ValueError("manifest has no U-Boot descriptor")
     if uboot.load_address != 0xA0800000 or uboot.entry_address != 0xA0800000:
         raise ValueError("unexpected U-Boot load/entry address in board manifest")
+    if not 0 < raw_size <= aligned_size <= UBOOT_SLOT_SIZE:
+        raise ValueError("invalid native U-Boot descriptor size")
+    if aligned_size % UBOOT_ALIGNMENT:
+        raise ValueError("native U-Boot descriptor is not 0x100-aligned")
 
     offset = uboot.table_offset
-    STOCK.put_u32(bootstrap, offset + 0x18, UBOOT_SLOT_SIZE)
-    STOCK.put_u32(bootstrap, offset + 0x20, UBOOT_SLOT_SIZE)
+    STOCK.put_u32(bootstrap, offset + 0x18, raw_size)
+    STOCK.put_u32(bootstrap, offset + 0x20, aligned_size)
     STOCK.put_u32(bootstrap, offset + 0x24, UBOOT_OFFSET)
-    STOCK.put_u32(bootstrap, offset + 0x34, FIXED_UBOOT_JAMCRC)
+    STOCK.put_u32(bootstrap, offset + 0x34, checksum)
 
     return bytes(bootstrap)
 
 
 def build_boot_image(image: bytes, manifest: dict) -> tuple[bytes, bytes, bytes]:
     """Return bootstrap, padded U-Boot and the 256 KiB OpenIPC boot image."""
-    bootstrap = build_openipc_bootstrap(manifest)
-    partition = build_uboot_partition(image)
+    partition, aligned_size, checksum = build_uboot_partition(image)
+    bootstrap = build_openipc_bootstrap(
+        manifest, len(image), aligned_size, checksum
+    )
     boot = bootstrap + partition
     if len(boot) != BOOT_PARTITION_SIZE:
         raise ValueError("OpenIPC boot partition has an invalid size")
@@ -116,13 +131,22 @@ def validate_boot_image(boot: bytes) -> None:
         raise ValueError("OpenIPC boot image has no U-Boot descriptor")
     if uboot.flash_offset != UBOOT_OFFSET:
         raise ValueError("OpenIPC U-Boot descriptor has the wrong flash offset")
-    if uboot.raw_size != UBOOT_SLOT_SIZE or uboot.aligned_size != UBOOT_SLOT_SIZE:
-        raise ValueError("OpenIPC U-Boot descriptor has the wrong size")
-    if uboot.checksum != FIXED_UBOOT_JAMCRC:
-        raise ValueError("OpenIPC U-Boot descriptor has the wrong JAMCRC")
+    if not 0 < uboot.raw_size <= uboot.aligned_size <= UBOOT_SLOT_SIZE:
+        raise ValueError("OpenIPC U-Boot descriptor has an invalid size")
+    if uboot.aligned_size % UBOOT_ALIGNMENT:
+        raise ValueError("OpenIPC U-Boot descriptor alignment is invalid")
+    if uboot.load_address != 0xA0800000 or uboot.entry_address != 0xA0800000:
+        raise ValueError("OpenIPC U-Boot descriptor has wrong load/entry address")
 
     payload = boot[UBOOT_OFFSET:UBOOT_OFFSET + UBOOT_SLOT_SIZE]
-    calculated = STOCK.jamcrc(payload)
+    if payload[uboot.raw_size:uboot.aligned_size] != \
+            b"\xff" * (uboot.aligned_size - uboot.raw_size):
+        raise ValueError("OpenIPC U-Boot alignment padding is not erased")
+    if payload[uboot.aligned_size:] != \
+            b"\xff" * (UBOOT_SLOT_SIZE - uboot.aligned_size):
+        raise ValueError("OpenIPC U-Boot slot tail is not erased")
+
+    calculated = STOCK.jamcrc(payload[:uboot.aligned_size])
     if calculated != uboot.checksum:
         raise ValueError(
             f"OpenIPC U-Boot JAMCRC mismatch: {calculated:#010x} != "
@@ -152,7 +176,13 @@ def write_artifacts(image: bytes, output_dir: pathlib.Path, manifest: dict) -> N
     (output_dir / f"{ARTIFACT_PREFIX}-boot.bin").write_bytes(boot)
     (output_dir / f"{ARTIFACT_PREFIX}-nor.bin").write_bytes(nor)
 
-    print(f"raw U-Boot:     {len(image):#010x}")
+    descriptor = next(
+        entry for entry in STOCK.parse_descriptors(boot)
+        if entry.name == "uboot"
+    )
+    print(f"raw U-Boot:     {descriptor.raw_size:#010x}")
+    print(f"aligned U-Boot: {descriptor.aligned_size:#010x}")
+    print(f"U-Boot JAMCRC:  {descriptor.checksum:#010x}")
     print(f"U-Boot slot:    {len(partition):#010x}")
     print(f"boot partition: {len(boot):#010x}")
     print(f"NOR boot image: {len(nor):#010x}")
