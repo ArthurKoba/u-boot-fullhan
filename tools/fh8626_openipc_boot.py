@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0+
-"""Build the OpenIPC-native boot partition for ANJIA AJL33PQ0866."""
+"""Build OpenIPC-native boot artifacts for ANJIA AJL33PQ0866."""
 
 import argparse
 import importlib.util
@@ -22,6 +22,7 @@ ENVIRONMENT_OFFSET = 0x40000
 ENVIRONMENT_SIZE = 0x10000
 BOOT_PARTITION_SIZE = 0x40000
 KERNEL_OFFSET = 0x50000
+NOR_IMAGE_SIZE = KERNEL_OFFSET
 KERNEL_SIZE = 0x200000
 ROOTFS_OFFSET = 0x250000
 ROOTFS_SIZE = 0x500000
@@ -36,7 +37,7 @@ ARTIFACT_PREFIX = "u-boot-fh8626v100-anjia-ajl33pq0866"
 
 
 def build_uboot_partition(image: bytes) -> bytes:
-    """Pad U-Boot to the 192 KiB OpenIPC boot-partition payload contract."""
+    """Pad U-Boot to the 192 KiB board payload contract."""
     if not image:
         raise ValueError("U-Boot image is empty")
 
@@ -91,8 +92,16 @@ def build_boot_image(image: bytes, manifest: dict) -> tuple[bytes, bytes, bytes]
     return bootstrap, partition, boot
 
 
+def build_nor_image(image: bytes, manifest: dict) -> tuple[bytes, bytes, bytes, bytes]:
+    """Return the 320 KiB OpenIPC NOR boot image including erased environment."""
+    bootstrap, partition, boot = build_boot_image(image, manifest)
+    nor = boot + b"\xff" * ENVIRONMENT_SIZE
+    validate_nor_image(nor)
+    return bootstrap, partition, boot, nor
+
+
 def validate_boot_image(boot: bytes) -> None:
-    """Validate OpenIPC layout and the ROM-visible U-Boot descriptor."""
+    """Validate the 256 KiB boot partition and ROM-visible descriptor."""
     if len(boot) != BOOT_PARTITION_SIZE:
         raise ValueError(
             f"boot image is {len(boot):#x}, expected {BOOT_PARTITION_SIZE:#x}"
@@ -121,31 +130,58 @@ def validate_boot_image(boot: bytes) -> None:
         )
 
 
+def validate_nor_image(nor: bytes) -> None:
+    """Validate the OpenIPC updater image: boot partition plus erased env."""
+    if len(nor) != NOR_IMAGE_SIZE:
+        raise ValueError(
+            f"NOR image is {len(nor):#x}, expected {NOR_IMAGE_SIZE:#x}"
+        )
+    validate_boot_image(nor[:BOOT_PARTITION_SIZE])
+    environment = nor[ENVIRONMENT_OFFSET:NOR_IMAGE_SIZE]
+    if environment != b"\xff" * ENVIRONMENT_SIZE:
+        raise ValueError("OpenIPC NOR image environment sector is not erased")
+
+
 def write_artifacts(image: bytes, output_dir: pathlib.Path, manifest: dict) -> None:
-    """Write board-specific OpenIPC boot artifacts."""
-    bootstrap, partition, boot = build_boot_image(image, manifest)
+    """Write board-specific OpenIPC boot/update artifacts."""
+    bootstrap, partition, boot, nor = build_nor_image(image, manifest)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     (output_dir / f"{ARTIFACT_PREFIX}-bootstrap.bin").write_bytes(bootstrap)
     (output_dir / f"{ARTIFACT_PREFIX}-uboot.bin").write_bytes(partition)
-    (output_dir / f"{ARTIFACT_PREFIX}.bin").write_bytes(boot)
+    (output_dir / f"{ARTIFACT_PREFIX}-boot.bin").write_bytes(boot)
+    (output_dir / f"{ARTIFACT_PREFIX}-nor.bin").write_bytes(nor)
 
     print(f"raw U-Boot:     {len(image):#010x}")
     print(f"U-Boot slot:    {len(partition):#010x}")
     print(f"boot partition: {len(boot):#010x}")
+    print(f"NOR boot image: {len(nor):#010x}")
     print(f"environment:    {ENVIRONMENT_OFFSET:#010x}+{ENVIRONMENT_SIZE:#010x}")
     print(f"kernel:         {KERNEL_OFFSET:#010x}+{KERNEL_SIZE:#010x}")
     print(f"rootfs:         {ROOTFS_OFFSET:#010x}+{ROOTFS_SIZE:#010x}")
     print(f"rootfs_data:    {ROOTFS_DATA_OFFSET:#010x}+remainder")
 
 
-def inspect_boot(path: pathlib.Path) -> None:
-    """Validate and print the native OpenIPC layout contract."""
-    boot = path.read_bytes()
-    validate_boot_image(boot)
+def inspect_image(path: pathlib.Path) -> None:
+    """Validate and print an OpenIPC boot or NOR-update artifact."""
+    image = path.read_bytes()
+    if len(image) == BOOT_PARTITION_SIZE:
+        validate_boot_image(image)
+        boot = image
+        kind = "boot"
+    elif len(image) == NOR_IMAGE_SIZE:
+        validate_nor_image(image)
+        boot = image[:BOOT_PARTITION_SIZE]
+        kind = "nor"
+    else:
+        raise ValueError(
+            f"image is {len(image):#x}; expected {BOOT_PARTITION_SIZE:#x} "
+            f"or {NOR_IMAGE_SIZE:#x}"
+        )
+
     descriptors = STOCK.parse_descriptors(boot)
     uboot = next(descriptor for descriptor in descriptors if descriptor.name == "uboot")
-    print(f"boot-size={len(boot):#x}")
+    print(f"type={kind} size={len(image):#x}")
     print(
         "uboot "
         f"flash={uboot.flash_offset:#x} "
@@ -164,9 +200,9 @@ def inspect_boot(path: pathlib.Path) -> None:
 
 
 def main() -> None:
-    """Build or inspect an OpenIPC-native FH8626 boot artifact."""
+    """Build or inspect an OpenIPC-native FH8626 artifact."""
     parser = argparse.ArgumentParser(
-        description="Build the OpenIPC-native AJL33PQ0866 boot partition"
+        description="Build OpenIPC-native AJL33PQ0866 boot artifacts"
     )
     parser.add_argument("input", type=pathlib.Path)
     parser.add_argument("output_dir", type=pathlib.Path, nargs="?")
@@ -179,7 +215,7 @@ def main() -> None:
     parser.add_argument(
         "--inspect",
         action="store_true",
-        help="validate an already-built 256 KiB OpenIPC boot image",
+        help="validate an already-built OpenIPC boot/NOR image",
     )
     args = parser.parse_args()
 
@@ -187,7 +223,7 @@ def main() -> None:
         if args.inspect:
             if args.output_dir is not None:
                 parser.error("output_dir is not accepted with --inspect")
-            inspect_boot(args.input)
+            inspect_image(args.input)
             return
 
         if args.output_dir is None:
