@@ -11,6 +11,8 @@ cross_compile=${CROSS_COMPILE:-arm-linux-gnueabi-}
 bootstrap_manifest=${FH8626_BOOTSTRAP_MANIFEST:-"$src_dir/board/fullhan/fh8626v100/bootrom.json"}
 prefix=u-boot-fh8626v100-anjia-ajl33pq0866
 
+python3 "$src_dir/test/py/tests/test_fh8626_openipc_boot.py"
+
 mkdir -p "$build_dir" "$ram_build_dir" "$output_dir"
 rm -f "$output_dir"/"$prefix"*.bin "$output_dir"/SHA256SUMS
 
