@@ -25,31 +25,37 @@ FH8626V100 has one board-specific detail inside the standard 256 KiB `boot`
 partition:
 
 - `0x00000..0x0ffff`: 64 KiB Fullhan Boot ROM data container;
-- `0x10000..0x3ffff`: 192 KiB current U-Boot payload.
+- `0x10000..0x3ffff`: 192 KiB U-Boot payload.
 
-The persistent U-Boot environment is therefore at the standard OpenIPC offset
-`0x40000`. Linux still starts at `0x50000`, matching the normal OpenIPC 8 MiB
-layout.
+The persistent U-Boot environment is at the OpenIPC offset `0x40000`. Linux
+starts at `0x50000`, matching the normal OpenIPC 8 MiB layout.
 
 The recovered ANJIA Boot ROM data is represented as auditable JSON in
-`board/fullhan/fh8626v100/bootrom.json`. The native packer changes only the
+`board/fullhan/fh8626v100/bootrom.json`. The native packer changes the
 ROM-visible U-Boot contract required by the OpenIPC layout: U-Boot moves to
-`0x10000` and occupies a fixed 192 KiB envelope. Load and entry remain
+`0x10000` and uses the complete 192 KiB board slot. Load and entry remain
 `0xa0800000`.
 
 ## OpenIPC environment
 
-The production target uses OpenIPC-style variables and commands, including:
+The production target follows the current OpenIPC NOR environment conventions,
+including:
 
-- `soc=fh8626v100`;
-- `manufacturer=fullhan`;
-- `baseaddr=0xa1000000`;
-- `flashsize=0x800000`;
-- `osmem=39M` and `totalmem=64M`;
-- `mtdpartsnor8m` and `setnor8m`;
-- `bootcmdnor`;
-- `uknor8m` and `urnor8m`;
-- `uImage.${soc}` and `rootfs.squashfs.${soc}` update names.
+- `soc=fh8626v100`, `board=anjia-ajl33pq0866`, `manufacturer=fullhan`;
+- `baseaddr`, `flashsize`, `osmem` and `totalmem`;
+- `kernaddr=0x50000`, `kernsize=0x200000`;
+- `rootaddr=0x250000`, `rootsize=0x500000`;
+- `mtdpartsnor8m`, `setnor8m`, `cmdnor` and `bootcmdnor`;
+- `updatetool=tftpboot`;
+- `ubnor` / `ubwrite`, `uknor` / `ukwrite`, and `urnor` / `urwrite`.
+
+The U-Boot updater deliberately uses a board-qualified artifact name:
+
+`u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin`
+
+because the reconstructed Boot ROM/DDR data is proven only on AJL33PQ0866.
+Kernel and rootfs retain the normal OpenIPC SoC-qualified names
+`uImage.fh8626v100` and `rootfs.squashfs.fh8626v100`.
 
 The production build does not depend on the Fullhan factory environment,
 `kload`, `ethact=FH EMAC`, or the factory `gpio <pin> out <0|1>` command syntax.
@@ -71,9 +77,13 @@ Install an ARM EABI cross compiler, Bison and Flex, then run:
 CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 ```
 
-The build emits board-specific artifacts in `output/`:
+`build.sh` builds both production and RAM-recovery configurations and validates
+the generated native NOR artifact before checksumming the outputs.
 
-- `u-boot-fh8626v100-anjia-ajl33pq0866.bin` — 256 KiB OpenIPC `boot` partition;
+The build emits these board-specific files in `output/`:
+
+- `u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin` — 320 KiB OpenIPC updater image: 256 KiB `boot` plus an erased 64 KiB `env` sector;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-boot.bin` — 256 KiB `boot` partition only;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-bootstrap.bin` — 64 KiB ROM container;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-uboot.bin` — padded 192 KiB U-Boot payload;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-raw.bin` — raw linked U-Boot binary;
@@ -82,15 +92,18 @@ The build emits board-specific artifacts in `output/`:
 
 The production packer is `tools/fh8626_openipc_boot.py`. The older
 `tools/fh8626_bootchain.py` remains the stock-container parser/reconstruction
-oracle and is used for migration evidence, not to define the final OpenIPC
-partition layout.
+oracle and migration evidence tool; it does not define the final OpenIPC flash
+layout.
 
 ## Migration from factory firmware
 
 Moving from factory Fullhan firmware to the native OpenIPC layout is a one-time
 full-layout migration, not a U-Boot-only update. The old environment at
-`0x10000` and old U-Boot at `0x20000` are replaced by the 256 KiB OpenIPC boot
-partition and a new environment at `0x40000`.
+`0x10000` and old U-Boot at `0x20000` are replaced by the OpenIPC boot image:
+
+- Boot ROM data at `0x00000`;
+- U-Boot at `0x10000`;
+- erased/new OpenIPC environment at `0x40000`.
 
 Do not reset after writing only the bootloader. Before the first native cold
 boot, the target must also contain an OpenIPC kernel fitting the 2 MiB kernel
@@ -112,6 +125,24 @@ The **OpenIPC-native relocation** of U-Boot to `0x10000`, environment to
 `0x40000`, and rootfs to `0x250000` is a new integration candidate and must not
 be called `HARDWARE_PASS` until the complete migrated layout has cold-booted on
 the camera.
+
+The current native production build fits the 192 KiB U-Boot slot while retaining
+TFTP upload, TFTP variables, command-line editing, autocomplete, long help and
+`sleep`. Final acceptance still depends on the target OpenIPC kernel fitting the
+standard 2 MiB kernel partition and on a physical cold-boot migration test.
+
+## OpenIPC alignment
+
+Before contribution or release, re-check the live OpenIPC rules and U-Boot
+conventions rather than treating this README as upstream authority:
+
+- https://github.com/OpenIPC/wiki/blob/master/en/help-uboot.md
+- https://github.com/OpenIPC/firmware
+- https://github.com/OpenIPC
+
+OpenIPC source ownership for a Fullhan U-Boot repository is an upstream
+organizational decision. U-Boot source must not be copied into Firmware or
+Builder merely to make integration convenient.
 
 ## Documentation
 
