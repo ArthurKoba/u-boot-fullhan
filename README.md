@@ -9,6 +9,20 @@ The target architecture is **OpenIPC-native**. Factory Fullhan layout and
 commands are retained only as migration/recovery knowledge; they are not the
 production contract.
 
+## Repository policy for generated binaries
+
+Generated firmware/U-Boot binaries are **not committed to this source
+repository**. The repository keeps source, board data, packers, validators,
+tests, build scripts, documentation and provenance/hash references. Generated
+`*.bin`, `*.img`, `*.elf`, `/output/` and build directories are ignored by Git.
+
+For active hardware work, generated files belong in the ignored local
+`output/` directory. For long-term retention or release, use a dedicated
+artifact/release/evidence store rather than committing generated binaries to
+the source tree. See
+`doc/board/fullhan/fh8626v100-history.rst` for the durable engineering history
+and artifact policy.
+
 ## Target OpenIPC layout
 
 The 8 MiB NOR layout follows the standard OpenIPC geometry:
@@ -82,7 +96,7 @@ CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 RAM-recovery configurations, validates the generated native NOR artifact, and
 then produces `SHA256SUMS`.
 
-The build emits these board-specific files in `output/`:
+The build emits these board-specific files in ignored `output/` storage:
 
 - `u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin` — 320 KiB OpenIPC updater image: 256 KiB `boot` plus an erased 64 KiB `env` sector;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-boot.bin` — 256 KiB `boot` partition only;
@@ -152,4 +166,5 @@ Builder merely to make integration convenient.
 - `doc/board/fullhan/fh8626v100.rst` — platform and OpenIPC boot contract;
 - `doc/board/fullhan/fh8626v100-openipc-migration.rst` — one-time native layout migration;
 - `doc/board/fullhan/fh8626v100-stock-migration.rst` — historical stock-compatible migration reference;
-- `doc/board/fullhan/fh8626v100-boot-format.rst` — recovered Fullhan Boot ROM container format.
+- `doc/board/fullhan/fh8626v100-boot-format.rst` — recovered Fullhan Boot ROM container format;
+- `doc/board/fullhan/fh8626v100-history.rst` — engineering history and generated-artifact policy.
