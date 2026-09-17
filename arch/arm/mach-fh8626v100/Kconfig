@@ -13,11 +13,13 @@ config CUSTOM_SYS_INIT_SP_ADDR
 	default 0xa2f00000
 
 config TARGET_FH8626V100
-	bool "Fullhan FH8626V100 reference platform"
+	bool "ANJIA AJL33PQ0866 (Fullhan FH8626V100)"
 	default y
 	help
-	  Enable the reference board target used to bring up U-Boot on
-	  FH8626V100-based IP cameras.
+	  Enable U-Boot for the ANJIA AJL33PQ0866 camera built around the
+	  Fullhan FH8626V100. SoC support is reusable, but the validated DDR
+	  bootstrap data, RMII wiring and flash migration contract are specific
+	  to this board until another FH8626V100 board is independently verified.
 
 source "board/fullhan/fh8626v100/Kconfig"
 

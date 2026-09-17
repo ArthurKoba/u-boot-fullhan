@@ -4,8 +4,8 @@
 #include <dt-bindings/gpio/gpio.h>
 
 / {
-	model = "Fullhan FH8626V100 reference platform";
-	compatible = "fullhan,fh8626v100";
+	model = "ANJIA AJL33PQ0866";
+	compatible = "anjia,ajl33pq0866", "fullhan,fh8626v100";
 
 	#address-cells = <1>;
 	#size-cells = <1>;

@@ -7,30 +7,38 @@
 
 #define CFG_EXTRA_ENV_SETTINGS \
 	"console=ttyS0,115200\0" \
-	"mem=39M\0" \
+	"osmem=39M\0" \
+	"totalmem=64M\0" \
 	"bootm_low=0xa0000000\0" \
 	"bootm_size=0x02700000\0" \
 	"soc=fh8626v100\0" \
 	"manufacturer=fullhan\0" \
 	"baseaddr=0xa1000000\0" \
 	"flashsize=0x800000\0" \
-	"kern_len=0x300000\0" \
-	"ipaddr=192.168.1.203\0" \
-	"serverip=192.168.1.11\0" \
-	"bootfile=anjia-ajl33pq0866.uImage\0" \
-	"set_gpio=gpio set 23; gpio clear 0; gpio clear 1; " \
-		"gpio clear 2; gpio clear 3; gpio clear 7; " \
-		"gpio clear 6; gpio clear 50; gpio clear 51; " \
-		"gpio clear 18; gpio clear 60\0" \
-	"openipc_args=setenv bootargs console=${console} mem=${mem} " \
-		"panic=20 mtdparts=${mtdparts} root=/dev/mtdblock5 " \
-		"rootfstype=squashfs ro init=/init ethaddr=${ethaddr}\0" \
-	"openipc_boot=run set_gpio; run openipc_args; sf probe 0:0; " \
-		"sf read ${baseaddr} 0x050000 ${kern_len}; " \
-		"bootm ${baseaddr}\0" \
-	"bootcmdnor=run openipc_boot\0" \
-	"netboot=run set_gpio; run openipc_args; " \
-		"tftpboot ${baseaddr} ${bootfile}; " \
-		"bootm ${baseaddr}\0"
+	"ipaddr=192.168.1.10\0" \
+	"serverip=192.168.1.254\0" \
+	"extras=\0" \
+	"mtdparts=spi_flash:256k(boot),64k(env),2048k(kernel)," \
+		"5120k(rootfs),-(rootfs_data)\0" \
+	"mtdpartsnor8m=setenv mtdparts " \
+		"spi_flash:256k(boot),64k(env),2048k(kernel)," \
+		"5120k(rootfs),-(rootfs_data)\0" \
+	"bootargs=mem=${osmem} console=${console} panic=20 " \
+		"root=/dev/mtdblock3 rootfstype=squashfs ro init=/init " \
+		"mtdparts=${mtdparts} ethaddr=${ethaddr} ${extras}\0" \
+	"bootcmdnor=setenv setargs setenv bootargs ${bootargs}; " \
+		"run setargs; sf probe 0:0; " \
+		"sf read ${baseaddr} 0x50000 0x200000; bootm ${baseaddr}\0" \
+	"setnor8m=run mtdpartsnor8m; setenv bootcmd ${bootcmdnor}; " \
+		"saveenv; reset\0" \
+	"uknor8m=mw.b ${baseaddr} ff 0x200000; " \
+		"tftpboot ${baseaddr} uImage.${soc} && sf probe 0:0; " \
+		"sf erase 0x50000 0x200000; " \
+		"sf write ${baseaddr} 0x50000 ${filesize}\0" \
+	"urnor8m=mw.b ${baseaddr} ff 0x500000; " \
+		"tftpboot ${baseaddr} rootfs.squashfs.${soc} && sf probe 0:0; " \
+		"sf erase 0x250000 0x500000; " \
+		"sf write ${baseaddr} 0x250000 ${filesize}\0" \
+	"netboot=tftpboot ${baseaddr} uImage.${soc}; bootm ${baseaddr}\0"
 
 #endif
