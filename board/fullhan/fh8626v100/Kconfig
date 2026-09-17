@@ -9,4 +9,12 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
 	default "fh8626v100"
 
+config FH8626V100_STOCK_COMPAT
+	bool "Enable Fullhan stock U-Boot compatibility helpers"
+	help
+	  Enable compatibility commands used only while migrating an
+	  AJL33PQ0866 from its factory Fullhan environment. Production OpenIPC
+	  images should leave this disabled and use native OpenIPC environment
+	  variables and command syntax.
+
 endif

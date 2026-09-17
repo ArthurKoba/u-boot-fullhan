@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Fullhan FH8626V100 reference platform
+ * Fullhan FH8626V100 support for ANJIA AJL33PQ0866.
  *
- * The RAM target is entered after the vendor bootstrap has initialized
+ * The RAM target is entered after the Fullhan ROM container has initialized
  * clocks and the 64 MiB SDRAM window at 0xa0000000.
  */
 
 #include <init.h>
-#include <env.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <asm/global_data.h>
@@ -44,7 +43,7 @@ static void fh8626_pad_config(unsigned int pad, u32 config)
 
 static void fh8626_rmii_pinctrl_init(void)
 {
-	/* FH8626V100 RMII pad configuration. */
+	/* AJL33PQ0866 RMII pad configuration. */
 	fh8626_pad_config(15, 0x10011140); /* MAC_RMII_CLK */
 	fh8626_pad_config(16, 0x10001140); /* MAC_REF_CLK */
 	fh8626_pad_config(17, 0x10011140); /* MAC_MDC */
@@ -79,17 +78,6 @@ int board_init(void)
 {
 	fh8626_board_io_init();
 	gd->bd->bi_boot_params = FH8626_BOOT_PARAMS;
-
-	return 0;
-}
-
-int board_late_init(void)
-{
-	const char *ethact = env_get("ethact");
-
-	/* The vendor environment names the same controller "FH EMAC". */
-	if (ethact && !strcmp(ethact, "FH EMAC"))
-		env_set("ethact", NULL);
 
 	return 0;
 }

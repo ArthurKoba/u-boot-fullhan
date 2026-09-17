@@ -147,8 +147,8 @@ static int do_gpio(struct cmd_tbl *cmdtp, int flag, int argc,
 	bool all = false;
 #endif
 
-	/* Preserve the vendor environment syntax: gpio <pin> out <0|1>. */
-	if (IS_ENABLED(CONFIG_ARCH_FH8626V100) && argc == 4 &&
+	/* Migration-only compatibility with Fullhan's factory environment. */
+	if (IS_ENABLED(CONFIG_FH8626V100_STOCK_COMPAT) && argc == 4 &&
 	    !strcmp(argv[2], "out")) {
 		char *compat_argv[4];
 
