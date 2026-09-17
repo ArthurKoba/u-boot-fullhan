@@ -52,6 +52,7 @@
 	"urnor=${updatetool} ${baseaddr} rootfs.squashfs.${soc} && run urwrite\0" \
 	"urwrite=sf probe 0; sf erase ${rootaddr} ${rootsize}; " \
 		"sf write ${baseaddr} ${rootaddr} ${filesize}\0" \
-	"netboot=${updatetool} ${baseaddr} uImage.${soc}; bootm ${baseaddr}\0"
+	"netboot=setenv setargs setenv bootargs ${bootargs}; run setargs; " \
+		"${updatetool} ${baseaddr} uImage.${soc}; bootm ${baseaddr}\0"
 
 #endif
