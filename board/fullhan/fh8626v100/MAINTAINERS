@@ -1,4 +1,4 @@
-FH8626V100 BOARD
+FH8626V100 / ANJIA AJL33PQ0866 BOARD
 M: Arthur Koba <61914203+ArthurKoba@users.noreply.github.com>
 S: Maintained
 F: arch/arm/dts/fh8626v100.dts
@@ -12,4 +12,6 @@ F: doc/board/fullhan/
 F: include/configs/fh8626v100.h
 F: README.md
 F: test/py/tests/test_fh8626_bootchain.py
+F: test/py/tests/test_fh8626_openipc_boot.py
 F: tools/fh8626_bootchain.py
+F: tools/fh8626_openipc_boot.py

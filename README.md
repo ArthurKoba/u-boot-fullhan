@@ -1,46 +1,67 @@
-# OpenIPC U-Boot for Fullhan FH8626V100
+# OpenIPC U-Boot for ANJIA AJL33PQ0866 / FH8626V100
 
-This repository carries a current-upstream U-Boot port for the Fullhan
-FH8626V100 camera SoC. It supports UART, 64 MiB DRAM, GPIO, SPI NOR and RMII
-Ethernet, and provides an OpenIPC-compatible default environment.
+This repository carries a modern U-Boot port for the Fullhan FH8626V100 as
+validated on the ANJIA AJL33PQ0866 camera. The implementation uses current
+U-Boot driver model and device tree support for UART, timer, GPIO, SPI NOR and
+RMII Ethernet.
 
-The production port is hardware-tested on an ANJIA AJL33PQ0866 camera with an
-8 MiB MX25L6405D NOR flash. It has replaced the vendor U-Boot while retaining
-the original Fullhan bootstrap and environment, then cold-booted the complete
-installed stock firmware. A non-persistent RAM target remains available for
-bring-up and recovery.
+The target architecture is **OpenIPC-native**. Factory Fullhan layout and
+commands are retained only as migration/recovery knowledge; they are not the
+production contract.
 
-## What this port changes
+## Target OpenIPC layout
 
-Compared with upstream U-Boot, this repository adds:
+The 8 MiB NOR layout follows the standard OpenIPC geometry:
 
-- FH8626V100 SoC and board initialization;
-- DesignWare APB UART, timer, GPIO and SPI integration for this SoC;
-- FH8626V100 DesignWare Ethernet/RMII support;
-- legacy ATAG and machine-ID boot required by the available Linux 4.9 port;
-- a bounded SPI FIFO path that avoids receive overruns on 3 MiB reads;
-- an OpenIPC raw-NOR layout, environment and reproducible boot-chain packer;
-- RAM and stock-bootstrap-compatible flash configurations.
+| Region | Offset | Size |
+|---|---:|---:|
+| boot | `0x000000` | 256 KiB |
+| env | `0x040000` | 64 KiB |
+| kernel | `0x050000` | 2048 KiB |
+| rootfs | `0x250000` | 5120 KiB |
+| rootfs_data | `0x750000` | remainder |
 
-Compared with Fullhan's U-Boot 2010.06, this is a modern driver-model port
-rather than a copy of proprietary vendor code. It keeps the interfaces needed
-by an existing vendor environment:
+FH8626V100 has one board-specific detail inside the standard 256 KiB `boot`
+partition:
 
-- `kload` reads the 3 MiB kernel partition from offset `0x50000`;
-- `gpio <pin> out <0|1>` remains accepted in addition to current U-Boot GPIO
-  syntax;
-- the vendor `ethact=FH EMAC` value is discarded in memory so the current
-  `eth0` device can be selected;
-- `sf`, `bootm`, environment, memory, CRC, MII, ping and TFTP commands are
-  available.
+- `0x00000..0x0ffff`: 64 KiB Fullhan Boot ROM data container;
+- `0x10000..0x3ffff`: 192 KiB current U-Boot payload.
 
-Vendor-only commands such as `upgrade`, `fastbootcmd`, `arc_go` and
-`chpart` are not carried over. MMC/FAT commands are omitted from the compact
-production target because the validated boot path uses SPI NOR. Long help,
-line editing/completion, `tftpput` and optional TFTP tuning variables are
-also omitted from that target to fit the immutable stock bootstrap envelope;
-normal `help` and `tftpboot` remain. The larger RAM target retains development
-and backup facilities including `tftpput`.
+The persistent U-Boot environment is therefore at the standard OpenIPC offset
+`0x40000`. Linux still starts at `0x50000`, matching the normal OpenIPC 8 MiB
+layout.
+
+The recovered ANJIA Boot ROM data is represented as auditable JSON in
+`board/fullhan/fh8626v100/bootrom.json`. The native packer changes only the
+ROM-visible U-Boot contract required by the OpenIPC layout: U-Boot moves to
+`0x10000` and occupies a fixed 192 KiB envelope. Load and entry remain
+`0xa0800000`.
+
+## OpenIPC environment
+
+The production target uses OpenIPC-style variables and commands, including:
+
+- `soc=fh8626v100`;
+- `manufacturer=fullhan`;
+- `baseaddr=0xa1000000`;
+- `flashsize=0x800000`;
+- `osmem=39M` and `totalmem=64M`;
+- `mtdpartsnor8m` and `setnor8m`;
+- `bootcmdnor`;
+- `uknor8m` and `urnor8m`;
+- `uImage.${soc}` and `rootfs.squashfs.${soc}` update names.
+
+The production build does not depend on the Fullhan factory environment,
+`kload`, `ethact=FH EMAC`, or the factory `gpio <pin> out <0|1>` command syntax.
+Those compatibility helpers are opt-in and enabled only in the RAM migration
+target.
+
+## Board scope
+
+Do not treat the generated boot image as a universal FH8626V100 binary.
+ANJIA AJL33PQ0866 has board-specific DDR/Boot-ROM parameters, RMII wiring and
+flash migration constraints. Another FH8626V100 board should reuse the SoC
+support but provide and validate its own board data before persistent flashing.
 
 ## Build
 
@@ -50,96 +71,51 @@ Install an ARM EABI cross compiler, Bison and Flex, then run:
 CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 ```
 
-The build creates these redistributable files in `output/`:
+The build emits board-specific artifacts in `output/`:
 
-- `u-boot-fh8626v100.bin` — raw U-Boot binary;
-- `u-boot-fh8626v100-bootstrap.bin` — generated 64 KiB Boot ROM container;
-- `u-boot-fh8626v100-partition.bin` — padded 192 KiB U-Boot partition;
-- `u-boot-fh8626v100-nor.bin` — complete 320 KiB OpenIPC boot region;
-- `SHA256SUMS` — checksums for all generated binaries.
+- `u-boot-fh8626v100-anjia-ajl33pq0866.bin` — 256 KiB OpenIPC `boot` partition;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-bootstrap.bin` — 64 KiB ROM container;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-uboot.bin` — padded 192 KiB U-Boot payload;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-raw.bin` — raw linked U-Boot binary;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-ram.bin` — non-persistent migration/recovery target;
+- `SHA256SUMS` — hashes for all generated artifacts.
 
-FH8626V100 Boot ROM does not load U-Boot directly. It first interprets a 64 KiB
-container to initialize SDRAM and locate the U-Boot payload. Its recovered,
-auditable board data is stored in
-`board/fullhan/fh8626v100/bootrom.json`; no executable vendor binary is
-embedded in the repository. The generator reproduces the validated stock
-64 KiB container byte-for-byte, including the stock U-Boot descriptor. That
-descriptor uses raw size `0x2bae4`, aligned size `0x2bb00` and JAMCRC
-`0x251d4c31`. A four-byte correction in the alignment padding makes every
-release satisfy that unchanged ROM-visible contract.
+The production packer is `tools/fh8626_openipc_boot.py`. The older
+`tools/fh8626_bootchain.py` remains the stock-container parser/reconstruction
+oracle and is used for migration evidence, not to define the final OpenIPC
+partition layout.
 
-This is not a complete semantic reverse engineering of the Fullhan bootstrap
-or the immutable Boot ROM interpreter. The manifest is a structured,
-byte-exact reproduction of the known-working original container. The generated
-container has been validated by successfully starting U-Boot and booting the
-installed firmware on the target camera.
+## Migration from factory firmware
 
-A verified 8 MiB flash dump can still be supplied as an independent validation
-and recovery input:
+Moving from factory Fullhan firmware to the native OpenIPC layout is a one-time
+full-layout migration, not a U-Boot-only update. The old environment at
+`0x10000` and old U-Boot at `0x20000` are replaced by the 256 KiB OpenIPC boot
+partition and a new environment at `0x40000`.
 
-```sh
-FH8626_FLASH_BACKUP=/path/to/full-8m-backup.bin \
-  CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
-```
+Do not reset after writing only the bootloader. Before the first native cold
+boot, the target must also contain an OpenIPC kernel fitting the 2 MiB kernel
+partition and an OpenIPC rootfs fitting the 5 MiB rootfs partition.
 
-The packer refuses corrupt dumps, inconsistent manifests and binaries larger
-than the stock `0x2bb00` ROM envelope.
+Use the RAM target and keep an externally verified full-flash backup plus an
+SPI programmer available. The detailed procedure is in
+`doc/board/fullhan/fh8626v100-openipc-migration.rst`.
 
-Migrating from the vendor boot chain updates only
-`u-boot-fh8626v100-partition.bin` at `0x20000`.  The stock bootstrap remains
-byte-for-byte unchanged, and the environment sector at `0x10000` is preserved.
-The generated bootstrap file is a recovery/reference artifact and must not be
-rewritten during a normal U-Boot update.
+## Hardware status
 
-## Migrating from vendor firmware
+The underlying U-Boot port is hardware-proven on AJL33PQ0866 for UART, 64 MiB
+DRAM, GPIO, repeated SPI NOR reads, legacy kernel handoff, RMII Ethernet,
+ping/TFTP, persistent environment access and cold boot. The earlier
+stock-compatible replacement U-Boot has booted both OpenIPC and the complete
+installed factory firmware.
 
-Follow the complete, checksum-gated procedure in
-[`fh8626v100-stock-migration.rst`](doc/board/fullhan/fh8626v100-stock-migration.rst).
-The important rules are:
+The **OpenIPC-native relocation** of U-Boot to `0x10000`, environment to
+`0x40000`, and rootfs to `0x250000` is a new integration candidate and must not
+be called `HARDWARE_PASS` until the complete migrated layout has cold-booted on
+the camera.
 
-1. keep an externally recoverable, verified full-flash dump;
-2. load the RAM target at `0xa3000000` from the vendor U-Boot;
-3. validate SPI, kernel loading, GPIO and Ethernet without writing NOR;
-4. write only the 192 KiB partition at `0x20000` and compare its complete
-   read-back before resetting;
-5. never erase the bootstrap at `0x00000` or environment at `0x10000` during
-   this migration.
+## Documentation
 
-Do not TFTP the flash-linked raw binary to `0xa0800000` while the vendor U-Boot
-is running: that is its active execution region. Use the RAM trampoline first,
-and flash the padded partition artifact from a separate buffer.
-
-The same method may work on other FH8626V100 boards, but only after their full
-dump confirms the same bootstrap U-Boot descriptor, DDR parameter container,
-flash geometry and load address. GPIO assignments, PHY wiring, memory size and
-partition layouts are board-specific. A matching SoC name alone is not enough
-to make persistent flashing safe.
-
-## RAM validation
-
-Build the non-persistent target with:
-
-```sh
-make O=build-ram CROSS_COMPILE=arm-linux-gnueabi- \
-  fh8626v100_ram_defconfig
-make O=build-ram CROSS_COMPILE=arm-linux-gnueabi- -j8
-```
-
-Load `build-ram/u-boot.bin` to `0xa3000000` from an existing U-Boot and start
-it with `go 0xa3000000`. This validates a candidate without writing SPI NOR.
-
-Detailed layout, migration and hardware-test instructions are in
-[`doc/board/fullhan/fh8626v100.rst`](doc/board/fullhan/fh8626v100.rst).
-The stock migration checklist is in
-[`fh8626v100-stock-migration.rst`](doc/board/fullhan/fh8626v100-stock-migration.rst).
-The recovered Boot ROM format is documented in
-[`fh8626v100-boot-format.rst`](doc/board/fullhan/fh8626v100-boot-format.rst).
-
-## Status
-
-The production target has passed cold boot through the unchanged stock
-bootstrap, persistent vendor-environment loading, repeated 3 MiB SPI NOR reads
-at 50 MHz, legacy-image CRC verification, vendor-compatible GPIO setup,
-100 Mbit/s full-duplex Ethernet, ping and TFTP. Both OpenIPC and the complete
-installed stock firmware have booted through the port. The U-Boot-only
-migration and read-back procedure was hardware-validated on 2026-09-04.
+- `doc/board/fullhan/fh8626v100.rst` — platform and OpenIPC boot contract;
+- `doc/board/fullhan/fh8626v100-openipc-migration.rst` — one-time native layout migration;
+- `doc/board/fullhan/fh8626v100-stock-migration.rst` — historical stock-compatible migration reference;
+- `doc/board/fullhan/fh8626v100-boot-format.rst` — recovered Fullhan Boot ROM container format.
