@@ -30,9 +30,14 @@ The 256 KiB ``boot`` partition contains the FH8626 board-specific split::
     0x000000  0x010000  Fullhan Boot ROM data container
     0x010000  0x030000  current U-Boot
 
-The ROM-visible U-Boot load/entry address remains ``0xa0800000``.  Only its
-SPI-NOR source offset changes, from the factory ``0x20000`` to ``0x10000``.
-The persistent environment moves to the OpenIPC offset ``0x40000``.
+The ROM-visible U-Boot load/entry address remains ``0xa0800000``.  Its SPI-NOR
+source offset changes from the factory ``0x20000`` to ``0x10000``.  The
+persistent environment moves to the OpenIPC offset ``0x40000``.
+
+For normal OpenIPC U-Boot update semantics, the generated ``-nor.bin`` file is
+``0x50000`` bytes: the 256 KiB boot partition followed by an erased 64 KiB
+environment sector.  This matches the standard ``ubwrite`` boundary at the
+kernel start address.
 
 Prerequisites
 -------------
@@ -47,17 +52,19 @@ Prerequisites
 #. Verify that ``uImage.fh8626v100`` is no larger than ``0x200000`` bytes.
 #. Verify that ``rootfs.squashfs.fh8626v100`` is no larger than ``0x500000``
    bytes.
-#. Record host SHA-256 values for all four migration inputs.
+#. Record host SHA-256 values for all migration inputs.
 #. Do not continue with unstable power.
 
 The required files are::
 
     u-boot-fh8626v100-anjia-ajl33pq0866-ram.bin
-    u-boot-fh8626v100-anjia-ajl33pq0866.bin
+    u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin
     uImage.fh8626v100
     rootfs.squashfs.fh8626v100
 
-The board-specific U-Boot artifact must be exactly ``0x40000`` bytes.
+The board-specific NOR updater artifact must be exactly ``0x50000`` bytes.  Its
+first ``0x40000`` bytes are the boot partition and its final ``0x10000`` bytes
+must be erased bytes (``0xff``).
 
 Stage 1: enter RAM U-Boot
 -------------------------
@@ -124,30 +131,29 @@ Prepare an empty persistent overlay area::
 At this point the factory Linux filesystem layout has been intentionally
 replaced.  Do not reset into the factory boot path.
 
-Stage 4: install the native OpenIPC boot partition
---------------------------------------------------
+Stage 4: install the native OpenIPC NOR boot image
+-------------------------------------------------
 
-Load the 256 KiB board-specific boot artifact and require the transfer size to
-be exactly ``0x40000``::
+Load the board-specific OpenIPC NOR artifact and require the transfer size to be
+exactly ``0x50000``::
 
-    tftpboot 0xa1000000 u-boot-fh8626v100-anjia-ajl33pq0866.bin
-    crc32 0xa1000000 0x40000
+    tftpboot 0xa1000000 u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin
+    crc32 0xa1000000 0x50000
 
 The destructive bootloader step is intentionally last.  Erase/write the full
-OpenIPC ``boot`` partition and verify every byte::
+OpenIPC boot-plus-environment region and verify every byte::
 
-    sf erase 0x00000 0x40000
-    sf write 0xa1000000 0x00000 0x40000
-    sf read 0xa1800000 0x00000 0x40000
-    cmp.b 0xa1000000 0xa1800000 0x40000
+    sf erase 0x00000 0x50000
+    sf write 0xa1000000 0x00000 0x50000
+    sf read 0xa1800000 0x00000 0x50000
+    cmp.b 0xa1000000 0xa1800000 0x50000
 
-Then erase the new OpenIPC environment sector so U-Boot starts from its
-compiled OpenIPC defaults::
+The final 64 KiB of the artifact is erased data, so the first native boot uses
+compiled OpenIPC defaults at environment offset ``0x40000``.  This is the same
+boundary used later by the OpenIPC ``ubnor`` / ``ubwrite`` update contract.
 
-    sf erase 0x40000 0x10000
-
-Do not reset unless the boot read-back comparison succeeded and the kernel and
-rootfs comparisons from the previous stages also succeeded.
+Do not reset unless this complete read-back comparison succeeded and the kernel
+and rootfs comparisons from the previous stages also succeeded.
 
 Stage 5: first native cold boot
 -------------------------------
@@ -163,14 +169,31 @@ Expected U-Boot properties are:
 * erased SPI environment detected and compiled defaults used;
 * ``mtdparts`` equal to
   ``spi_flash:256k(boot),64k(env),2048k(kernel),5120k(rootfs),-(rootfs_data)``;
-* ``bootcmd`` executes ``bootcmdnor``;
-* kernel read from ``0x50000`` with a 2 MiB partition envelope;
+* ``kernaddr=0x50000`` and ``kernsize=0x200000``;
+* ``rootaddr=0x250000`` and ``rootsize=0x500000``;
+* ``bootcmd``/``bootcmdnor`` execute the OpenIPC NOR boot path;
+* kernel read from ``0x50000``;
 * Linux root at ``/dev/mtdblock3``;
 * usable ``ethaddr`` passed into the FH8626 Linux platform.
 
-After Linux reaches userspace, verify the MTD map before making the environment
-persistent.  Then the OpenIPC-side ``fw_printenv`` / ``fw_setenv`` flow may be
-used normally.
+After Linux reaches userspace, verify the MTD map and ``fw_printenv`` contract.
+Then run ``run setnor8m`` or save equivalent accepted defaults so subsequent
+boots use the standard OpenIPC environment persistently.
+
+Normal later updates
+--------------------
+
+Once the native layout is accepted, the production environment exposes the
+normal OpenIPC-style update variables::
+
+    run ubnor
+    run uknor
+    run urnor
+
+``ubnor`` downloads the board-qualified 320 KiB NOR boot image and writes the
+complete ``0x00000..0x4ffff`` region. ``uknor`` and ``urnor`` use the standard
+SoC-qualified kernel/rootfs names.  The update commands are convenience paths,
+not substitutes for preserving recovery access when testing a new bootloader.
 
 Recovery
 --------
