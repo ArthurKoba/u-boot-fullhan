@@ -25,16 +25,17 @@ FH8626V100 has one board-specific detail inside the standard 256 KiB `boot`
 partition:
 
 - `0x00000..0x0ffff`: 64 KiB Fullhan Boot ROM data container;
-- `0x10000..0x3ffff`: 192 KiB U-Boot payload.
+- `0x10000..0x3ffff`: 192 KiB physical U-Boot slot.
 
 The persistent U-Boot environment is at the OpenIPC offset `0x40000`. Linux
 starts at `0x50000`, matching the normal OpenIPC 8 MiB layout.
 
 The recovered ANJIA Boot ROM data is represented as auditable JSON in
-`board/fullhan/fh8626v100/bootrom.json`. The native packer changes the
-ROM-visible U-Boot contract required by the OpenIPC layout: U-Boot moves to
-`0x10000` and uses the complete 192 KiB board slot. Load and entry remain
-`0xa0800000`.
+`board/fullhan/fh8626v100/bootrom.json`. The native packer moves U-Boot to
+`0x10000` while preserving its RAM load/entry address at `0xa0800000`. For each
+build it records the actual raw U-Boot size, aligns the ROM-visible payload to
+`0x100`, and calculates the descriptor JAMCRC from that payload. The remaining
+bytes in the 192 KiB physical slot stay erased.
 
 ## OpenIPC environment
 
@@ -77,15 +78,16 @@ Install an ARM EABI cross compiler, Bison and Flex, then run:
 CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 ```
 
-`build.sh` builds both production and RAM-recovery configurations and validates
-the generated native NOR artifact before checksumming the outputs.
+`build.sh` runs the native boot-artifact unit tests, builds both production and
+RAM-recovery configurations, validates the generated native NOR artifact, and
+then produces `SHA256SUMS`.
 
 The build emits these board-specific files in `output/`:
 
 - `u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin` — 320 KiB OpenIPC updater image: 256 KiB `boot` plus an erased 64 KiB `env` sector;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-boot.bin` — 256 KiB `boot` partition only;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-bootstrap.bin` — 64 KiB ROM container;
-- `u-boot-fh8626v100-anjia-ajl33pq0866-uboot.bin` — padded 192 KiB U-Boot payload;
+- `u-boot-fh8626v100-anjia-ajl33pq0866-uboot.bin` — U-Boot payload padded to the 192 KiB physical slot;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-raw.bin` — raw linked U-Boot binary;
 - `u-boot-fh8626v100-anjia-ajl33pq0866-ram.bin` — non-persistent migration/recovery target;
 - `SHA256SUMS` — hashes for all generated artifacts.
@@ -126,10 +128,11 @@ The **OpenIPC-native relocation** of U-Boot to `0x10000`, environment to
 be called `HARDWARE_PASS` until the complete migrated layout has cold-booted on
 the camera.
 
-The current native production build fits the 192 KiB U-Boot slot while retaining
-TFTP upload, TFTP variables, command-line editing, autocomplete, long help and
-`sleep`. Final acceptance still depends on the target OpenIPC kernel fitting the
-standard 2 MiB kernel partition and on a physical cold-boot migration test.
+The current native production build fits the 192 KiB physical U-Boot slot while
+retaining TFTP upload, TFTP variables, command-line editing, autocomplete, long
+help and `sleep`. Final acceptance still depends on the target OpenIPC kernel
+fitting the standard 2 MiB kernel partition and on a physical cold-boot
+migration test.
 
 ## OpenIPC alignment
 
