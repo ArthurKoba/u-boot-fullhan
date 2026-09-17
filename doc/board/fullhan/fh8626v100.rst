@@ -50,7 +50,7 @@ FH8626V100 has a board-specific split inside the standard 256 KiB boot
 partition::
 
     0x000000-0x00ffff   Fullhan Boot ROM data container
-    0x010000-0x03ffff   U-Boot payload
+    0x010000-0x03ffff   U-Boot physical slot
 
 The environment remains outside that boot partition at ``0x40000`` exactly as
 expected by the OpenIPC 8 MiB layout.
@@ -88,12 +88,20 @@ Recovered AJL33PQ0866 data is represented by
 ``tools/fh8626_bootchain.py`` remains the stock-container
 parser/reconstruction oracle.  ``tools/fh8626_openipc_boot.py`` builds the
 production OpenIPC artifacts by preserving the recovered board data and
-changing the U-Boot descriptor to the native layout:
+regenerating the U-Boot descriptor for every build:
 
 * flash offset ``0x10000``;
-* 192 KiB ROM-visible U-Boot envelope;
+* raw size equal to the actual linked ``u-boot.bin`` size;
+* aligned size rounded up to ``0x100`` without exceeding the 192 KiB physical
+  slot;
+* JAMCRC calculated from that aligned payload;
 * load address ``0xa0800000``;
 * entry address ``0xa0800000``.
+
+The native path therefore does not preserve the stock descriptor size or its
+fixed historical JAMCRC as a production requirement.  Those values remain in
+the stock parser/evidence path only.  Unused bytes in the physical U-Boot slot
+remain erased.
 
 The remaining recovered container fields are retained until their mask-ROM
 semantics are better established.  The container is board data, not a copied
@@ -106,8 +114,8 @@ Build all release/recovery artifacts with::
 
     CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 
-``build.sh`` validates the generated NOR updater image before producing
-``SHA256SUMS``.  The output directory contains:
+``build.sh`` runs the native packer tests and validates the generated NOR
+updater image before producing ``SHA256SUMS``.  The output directory contains:
 
 ``u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin``
     320 KiB OpenIPC U-Boot updater image.  It contains the 256 KiB ``boot``
@@ -121,7 +129,7 @@ Build all release/recovery artifacts with::
     64 KiB generated Fullhan ROM container.
 
 ``u-boot-fh8626v100-anjia-ajl33pq0866-uboot.bin``
-    192 KiB padded U-Boot payload loaded by the ROM container.
+    U-Boot payload padded to the 192 KiB physical slot.
 
 ``u-boot-fh8626v100-anjia-ajl33pq0866-raw.bin``
     Raw linked production U-Boot binary.
