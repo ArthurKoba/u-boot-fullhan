@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0+
-"""Tests for the OpenIPC-native FH8626 boot partition."""
+"""Tests for the OpenIPC-native FH8626 boot artifacts."""
 
 import importlib.util
 import json
@@ -52,14 +52,33 @@ class Fh8626OpenipcBootTest(unittest.TestCase):
         self.assertEqual(len(boot), 0x40000)
         BOOT.validate_boot_image(boot)
 
+    def test_openipc_nor_image_is_320k_with_erased_env(self):
+        _, _, boot, nor = BOOT.build_nor_image(
+            b"u-boot" * 1000, self.manifest
+        )
+
+        self.assertEqual(len(nor), 0x50000)
+        self.assertEqual(nor[:0x40000], boot)
+        self.assertEqual(nor[0x40000:], b"\xff" * 0x10000)
+        BOOT.validate_nor_image(nor)
+
     def test_standard_openipc_8m_offsets(self):
         self.assertEqual(BOOT.ENVIRONMENT_OFFSET, 0x40000)
+        self.assertEqual(BOOT.NOR_IMAGE_SIZE, 0x50000)
         self.assertEqual(BOOT.KERNEL_OFFSET, 0x50000)
         self.assertEqual(BOOT.KERNEL_SIZE, 0x200000)
         self.assertEqual(BOOT.ROOTFS_OFFSET, 0x250000)
         self.assertEqual(BOOT.ROOTFS_SIZE, 0x500000)
         self.assertEqual(BOOT.ROOTFS_DATA_OFFSET, 0x750000)
         self.assertEqual(BOOT.FLASH_SIZE, 0x800000)
+
+    def test_rejects_dirty_environment_in_nor_image(self):
+        _, _, _, nor = BOOT.build_nor_image(b"u-boot" * 1000, self.manifest)
+        corrupt = bytearray(nor)
+        corrupt[BOOT.ENVIRONMENT_OFFSET] = 0
+
+        with self.assertRaisesRegex(ValueError, "environment sector"):
+            BOOT.validate_nor_image(bytes(corrupt))
 
     def test_rejects_oversized_uboot(self):
         with self.assertRaisesRegex(ValueError, "exceeds OpenIPC payload limit"):
