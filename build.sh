@@ -25,6 +25,8 @@ install -m 0644 "$build_dir/u-boot.bin" \
 python3 "$src_dir/tools/fh8626_openipc_boot.py" \
 	--bootstrap-manifest "$bootstrap_manifest" \
 	"$output_dir/$prefix-raw.bin" "$output_dir"
+python3 "$src_dir/tools/fh8626_openipc_boot.py" \
+	"$output_dir/$prefix-nor.bin" --inspect
 
 make -C "$src_dir" O="$ram_build_dir" \
 	CROSS_COMPILE="$cross_compile" fh8626v100_ram_defconfig
