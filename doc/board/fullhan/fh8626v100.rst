@@ -55,10 +55,23 @@ partition::
 The environment remains outside that boot partition at ``0x40000`` exactly as
 expected by the OpenIPC 8 MiB layout.
 
-The production default environment exposes OpenIPC-style ``mtdpartsnor8m``,
-``setnor8m``, ``bootcmdnor``, ``uknor8m`` and ``urnor8m`` commands.  The normal
-kernel name is ``uImage.${soc}``, rootfs is ``rootfs.squashfs.${soc}``, and
-Linux mounts ``/dev/mtdblock3`` as SquashFS.
+The production default environment follows the current OpenIPC NOR naming
+conventions.  Important variables include:
+
+* ``kernaddr=0x50000`` and ``kernsize=0x200000``;
+* ``rootaddr=0x250000`` and ``rootsize=0x500000``;
+* ``mtdpartsnor8m`` and ``setnor8m``;
+* ``cmdnor`` and ``bootcmdnor``;
+* ``updatetool=tftpboot``;
+* ``ubnor`` / ``ubwrite``;
+* ``uknor`` / ``ukwrite``;
+* ``urnor`` / ``urwrite``.
+
+Kernel and rootfs use the normal OpenIPC SoC-qualified names
+``uImage.${soc}`` and ``rootfs.squashfs.${soc}``.  The U-Boot updater remains
+board-qualified as ``u-boot-${soc}-${board}-nor.bin`` because the current
+Boot-ROM/DDR data is proven only for AJL33PQ0866.  Linux mounts
+``/dev/mtdblock3`` as SquashFS.
 
 The kernel partition is exactly 2 MiB.  A native-layout migration must not be
 attempted until the final OpenIPC ``uImage.fh8626v100`` has been measured and
@@ -74,11 +87,11 @@ Recovered AJL33PQ0866 data is represented by
 
 ``tools/fh8626_bootchain.py`` remains the stock-container
 parser/reconstruction oracle.  ``tools/fh8626_openipc_boot.py`` builds the
-production OpenIPC boot partition by preserving the recovered board data and
+production OpenIPC artifacts by preserving the recovered board data and
 changing the U-Boot descriptor to the native layout:
 
 * flash offset ``0x10000``;
-* fixed 192 KiB ROM-visible U-Boot envelope;
+* 192 KiB ROM-visible U-Boot envelope;
 * load address ``0xa0800000``;
 * entry address ``0xa0800000``.
 
@@ -93,10 +106,16 @@ Build all release/recovery artifacts with::
 
     CROSS_COMPILE=arm-linux-gnueabi- ./build.sh
 
-The output directory contains:
+``build.sh`` validates the generated NOR updater image before producing
+``SHA256SUMS``.  The output directory contains:
 
-``u-boot-fh8626v100-anjia-ajl33pq0866.bin``
-    Exact 256 KiB OpenIPC ``boot`` partition.
+``u-boot-fh8626v100-anjia-ajl33pq0866-nor.bin``
+    320 KiB OpenIPC U-Boot updater image.  It contains the 256 KiB ``boot``
+    partition followed by a deliberately erased 64 KiB environment sector and
+    matches the standard OpenIPC ``ubwrite`` boundary at ``0x50000``.
+
+``u-boot-fh8626v100-anjia-ajl33pq0866-boot.bin``
+    Exact 256 KiB OpenIPC ``boot`` partition without the environment sector.
 
 ``u-boot-fh8626v100-anjia-ajl33pq0866-bootstrap.bin``
     64 KiB generated Fullhan ROM container.
@@ -144,7 +163,7 @@ camera to OpenIPC-native layout is a one-time full-flash-layout transition:
 
 The complete checked procedure is documented in
 :doc:`fh8626v100-openipc-migration`.  Kernel and rootfs must be written and
-verified before the final boot partition is installed and the camera reset.
+verified before the final NOR boot image is installed and the camera reset.
 
 The earlier stock-compatible U-Boot-only replacement remains documented in
 :doc:`fh8626v100-stock-migration` as historical evidence and a recovery aid.
