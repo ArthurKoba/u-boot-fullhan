@@ -24,27 +24,41 @@ class Fh8626OpenipcBootTest(unittest.TestCase):
             BOOT.DEFAULT_MANIFEST.read_text(encoding="utf-8")
         )
 
-    def test_partition_has_fixed_192k_envelope(self):
+    def test_partition_tracks_actual_payload(self):
         image = b"openipc-u-boot" * 101
-        partition = BOOT.build_uboot_partition(image)
+        partition, aligned, checksum = BOOT.build_uboot_partition(image)
 
         self.assertEqual(len(partition), 0x30000)
         self.assertEqual(partition[:len(image)], image)
+        self.assertEqual(aligned, BOOT.align_up(len(image), 0x100))
         self.assertEqual(
-            BOOT.STOCK.jamcrc(partition), BOOT.FIXED_UBOOT_JAMCRC
+            partition[len(image):aligned],
+            b"\xff" * (aligned - len(image)),
         )
+        self.assertEqual(
+            partition[aligned:], b"\xff" * (0x30000 - aligned)
+        )
+        self.assertEqual(BOOT.STOCK.jamcrc(partition[:aligned]), checksum)
 
-    def test_bootstrap_moves_uboot_to_openipc_boot_partition(self):
-        bootstrap = BOOT.build_openipc_bootstrap(self.manifest)
+    def test_bootstrap_moves_uboot_and_describes_actual_payload(self):
+        image = b"native-u-boot" * 173
+        partition, aligned, checksum = BOOT.build_uboot_partition(image)
+        bootstrap = BOOT.build_openipc_bootstrap(
+            self.manifest, len(image), aligned, checksum
+        )
         descriptors = BOOT.STOCK.parse_descriptors(bootstrap)
         uboot = next(entry for entry in descriptors if entry.name == "uboot")
 
         self.assertEqual(uboot.flash_offset, 0x10000)
-        self.assertEqual(uboot.raw_size, 0x30000)
-        self.assertEqual(uboot.aligned_size, 0x30000)
+        self.assertEqual(uboot.raw_size, len(image))
+        self.assertEqual(uboot.aligned_size, aligned)
         self.assertEqual(uboot.load_address, 0xA0800000)
         self.assertEqual(uboot.entry_address, 0xA0800000)
-        self.assertEqual(uboot.checksum, BOOT.FIXED_UBOOT_JAMCRC)
+        self.assertEqual(uboot.checksum, checksum)
+        self.assertEqual(
+            BOOT.STOCK.jamcrc(partition[:uboot.aligned_size]),
+            uboot.checksum,
+        )
 
     def test_complete_boot_partition_is_256k(self):
         _, _, boot = BOOT.build_boot_image(b"u-boot" * 1000, self.manifest)
@@ -80,9 +94,17 @@ class Fh8626OpenipcBootTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "environment sector"):
             BOOT.validate_nor_image(bytes(corrupt))
 
-    def test_rejects_oversized_uboot(self):
-        with self.assertRaisesRegex(ValueError, "exceeds OpenIPC payload limit"):
-            BOOT.build_uboot_partition(b"x" * (BOOT.UBOOT_SLOT_SIZE - 3))
+    def test_rejects_payload_larger_than_physical_slot(self):
+        with self.assertRaisesRegex(ValueError, "exceeds OpenIPC slot"):
+            BOOT.build_uboot_partition(b"x" * (BOOT.UBOOT_SLOT_SIZE + 1))
+
+    def test_accepts_payload_exactly_filling_physical_slot(self):
+        image = b"x" * BOOT.UBOOT_SLOT_SIZE
+        partition, aligned, checksum = BOOT.build_uboot_partition(image)
+
+        self.assertEqual(aligned, BOOT.UBOOT_SLOT_SIZE)
+        self.assertEqual(partition, image)
+        self.assertEqual(BOOT.STOCK.jamcrc(partition), checksum)
 
 
 if __name__ == "__main__":
